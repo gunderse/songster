@@ -80,6 +80,18 @@ export function rescanLibrary(): Promise<ScanSummary> {
   return http<{ summary: ScanSummary }>("/api/library/scan", { method: "POST" }).then((r) => r.summary);
 }
 
+export async function uploadArt(id: string, file: File): Promise<LibrarySong> {
+  const response = await fetch(`/api/library/songs/${id}/art`, {
+    method: "POST",
+    headers: { "content-type": file.type },
+    body: file,
+  });
+  if (!response.ok) {
+    throw new Error(`Upload failed (${response.status})`);
+  }
+  return ((await response.json()) as { song: LibrarySong }).song;
+}
+
 export function audioStreamUrl(id: string): string {
   return `/audio/${id}/stream`;
 }

@@ -20,6 +20,8 @@ export interface ActiveTurnView {
   placerIsBot: boolean;
   phase: "placing" | "revealing";
   snippetLenS: number;
+  /** ms-epoch when the current snippet finishes; replay is disabled until then. */
+  snippetPlayingUntil: number;
   /** An opponent who has spent a Steal token on this turn (spoiler-safe). */
   steal: { teamId: string; playerName: string } | null;
 }

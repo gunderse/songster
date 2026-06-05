@@ -17,6 +17,11 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   const [committed, setCommitted] = useState(false);
   const [stealMode, setStealMode] = useState(false);
   const [stealSlot, setStealSlot] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
 
   // Reset placement state every turn (turnId changes even when the same player
   // places twice in a row, e.g. solo play) and when the phase flips.
@@ -105,6 +110,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               🎟️ Skip this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"} left
             </button>
           )}
+          <ReplayButton ready={now >= active.snippetPlayingUntil} />
         </div>
       </main>
     );
@@ -188,6 +194,12 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
         </button>
       )}
 
+      {active !== null && active.phase === "placing" && (
+        <div className="flex justify-center">
+          <ReplayButton ready={now >= active.snippetPlayingUntil} />
+        </div>
+      )}
+
       <div>
         <div className="mb-1 text-sm text-slate-500">Your team{myTeam !== null ? ` · ${myTeam.name}` : ""}</div>
         <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={null} onSelect={() => undefined} readOnly />
@@ -266,4 +278,17 @@ function Scoreboard({ room }: { room: RoomState }) {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100">{children}</main>;
+}
+
+function ReplayButton({ ready }: { ready: boolean }) {
+  return (
+    <button
+      type="button"
+      disabled={!ready}
+      onClick={() => socket.emit("player:replay")}
+      className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+    >
+      {ready ? "🔁 Play again on the hub" : "🔁 Playing…"}
+    </button>
+  );
 }

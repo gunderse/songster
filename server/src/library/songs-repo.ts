@@ -166,6 +166,12 @@ export function updateSong(db: DatabaseType.Database, id: string, update: SongUp
   return getSong(db, id);
 }
 
+export function setSongArt(db: DatabaseType.Database, id: string, artPath: string): LibrarySong | null {
+  const result = db.prepare("UPDATE songs SET art_path = ?, updated_at = ? WHERE id = ?").run(artPath, Date.now(), id);
+  if (result.changes === 0) return null;
+  return getSong(db, id);
+}
+
 export function getStats(db: DatabaseType.Database): LibraryStats {
   const counts = db
     .prepare("SELECT status, COUNT(*) AS c FROM songs GROUP BY status")

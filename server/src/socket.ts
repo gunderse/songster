@@ -105,6 +105,10 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       manager.stealPlace(socket.id, parsed.data.index);
     });
 
+    socket.on("player:replay", () => {
+      manager.replay(socket.id);
+    });
+
     socket.on("hub:join", (payload, ack) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) {

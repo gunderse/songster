@@ -1,4 +1,7 @@
-import { Router } from "express";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+import express, { Router } from "express";
 
 import type DatabaseType from "better-sqlite3";
 
@@ -10,7 +13,16 @@ import { musicDir, ollamaModel } from "../config.js";
 import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { scanLibrary } from "./scan.js";
-import { getFacets, getSong, getStats, listSongs, updateSong } from "./songs-repo.js";
+import { getFacets, getSong, getStats, listSongs, setSongArt, updateSong } from "./songs-repo.js";
+
+const artDir = path.resolve(import.meta.dirname, "../../data/art");
+const ART_EXT: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
 
 export function createLibraryRouter(db: DatabaseType.Database): Router {
   const router = Router();
@@ -50,6 +62,39 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     }
     res.json({ song: updated });
   });
+
+  router.post(
+    "/songs/:id/art",
+    express.raw({ type: (req) => (req.headers["content-type"] ?? "").startsWith("image/"), limit: "10mb" }),
+    async (req, res) => {
+      const id = req.params.id;
+      if (typeof id !== "string") {
+        res.sendStatus(400);
+        return;
+      }
+      if (getSong(db, id) === null) {
+        res.sendStatus(404);
+        return;
+      }
+      const contentType = (req.headers["content-type"] ?? "").split(";")[0]!.trim();
+      const ext = ART_EXT[contentType];
+      const body: unknown = req.body;
+      if (ext === undefined || !Buffer.isBuffer(body) || body.length === 0) {
+        res.status(400).json({ error: "Expected a PNG / JPEG / WebP / GIF image body." });
+        return;
+      }
+      try {
+        await mkdir(artDir, { recursive: true });
+        const fileName = `${id}.${ext}`;
+        await writeFile(path.join(artDir, fileName), body);
+        const updated = setSongArt(db, id, path.posix.join("art", fileName));
+        res.json({ song: updated });
+      } catch (error) {
+        logger.error({ id, error: getErrorMessage(error) }, "art upload failed");
+        res.status(500).json({ error: getErrorMessage(error) });
+      }
+    },
+  );
 
   router.post("/songs/:id/suggest-year", async (req, res) => {
     const id = req.params.id;

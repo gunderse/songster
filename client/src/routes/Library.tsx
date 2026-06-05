@@ -19,6 +19,7 @@ import {
   patchSong,
   rescanLibrary,
   suggestYear,
+  uploadArt,
   type AiStatus,
 } from "../api";
 
@@ -112,6 +113,11 @@ export function Library() {
     [previewingId, stopPreview],
   );
 
+  const uploadArtFor = useCallback(async (id: string, file: File) => {
+    const updated = await uploadArt(id, file);
+    setSongs((prev) => prev.map((s) => (s.id === id ? updated : s)));
+  }, []);
+
   const applyPatch = useCallback(
     async (id: string, update: SongUpdate) => {
       setBusy(id);
@@ -204,6 +210,7 @@ export function Library() {
             aiAvailable={ai?.ok === true && ai.modelAvailable === true}
             onPreview={() => previewSong(song)}
             onPatch={(update) => applyPatch(song.id, update)}
+            onUploadArt={(file) => uploadArtFor(song.id, file)}
           />
         ))}
         {!loading && songs.length === 0 && (
@@ -221,8 +228,9 @@ function SongRow(props: {
   aiAvailable: boolean;
   onPreview: () => void;
   onPatch: (update: SongUpdate) => Promise<LibrarySong>;
+  onUploadArt: (file: File) => Promise<void>;
 }) {
-  const { song, busy, previewing, aiAvailable, onPreview, onPatch } = props;
+  const { song, busy, previewing, aiAvailable, onPreview, onPatch, onUploadArt } = props;
   const [year, setYear] = useState<string>(song.year?.toString() ?? "");
   const [start, setStart] = useState<string>(song.snippetStartS?.toString() ?? "");
   const [title, setTitle] = useState(song.title ?? "");
@@ -231,6 +239,8 @@ function SongRow(props: {
   const [suggestion, setSuggestion] = useState<YearSuggestion | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [artBust, setArtBust] = useState(0);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setYear(song.year?.toString() ?? "");
@@ -285,21 +295,42 @@ function SongRow(props: {
 
   return (
     <div className={`grid grid-cols-[3rem_1fr_auto] gap-3 border-l-4 ${statusTint} py-3 pl-3 pr-1`}>
-      <button
-        type="button"
-        onClick={onPreview}
-        title="Preview snippet"
-        className="relative h-12 w-12 overflow-hidden rounded bg-slate-800 text-lg"
-      >
-        {song.hasArt ? (
-          <img src={artUrl(song.id)} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center text-slate-500">♪</span>
-        )}
-        <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 hover:opacity-100">
-          {previewing ? "⏸" : "▶"}
-        </span>
-      </button>
+      <div className="relative h-12 w-12">
+        <button
+          type="button"
+          onClick={onPreview}
+          title="Preview snippet"
+          className="relative h-full w-full overflow-hidden rounded bg-slate-800 text-lg"
+        >
+          {song.hasArt ? (
+            <img src={`${artUrl(song.id)}?v=${artBust}`} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-slate-500">♪</span>
+          )}
+          <span className="absolute inset-0 flex items-center justify-center rounded bg-black/40 opacity-0 hover:opacity-100">
+            {previewing ? "⏸" : "▶"}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          title="Set cover image"
+          className="absolute -bottom-1.5 -right-1.5 rounded-full border border-slate-600 bg-slate-900 px-1 text-[10px] leading-none hover:bg-indigo-600"
+        >
+          🖼
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file !== undefined) void onUploadArt(file).then(() => setArtBust(Date.now()));
+            e.target.value = "";
+          }}
+        />
+      </div>
 
       <div className="min-w-0">
         <div className="flex items-center gap-2">

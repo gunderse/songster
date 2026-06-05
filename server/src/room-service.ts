@@ -56,6 +56,7 @@ interface ActiveTurn {
   placerId: string;
   phase: "placing" | "revealing";
   steal: { playerId: string; teamId: string; index: number } | null;
+  snippetEndsAt: number;
 }
 
 interface Game {
@@ -321,14 +322,35 @@ export class RoomManager {
     }
     game.used.add(song.songId);
     game.turnCounter += 1;
-    game.active = { song, teamId: game.active.teamId, placerId: game.active.placerId, phase: "placing", steal: null };
+    const lenS = song.snippetLenS ?? room.config.snippetLenS;
+    game.active = {
+      song,
+      teamId: game.active.teamId,
+      placerId: game.active.placerId,
+      phase: "placing",
+      steal: null,
+      snippetEndsAt: Date.now() + lenS * 1000 + 1000,
+    };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
-    this.hooks.playAudioToHubs(room.code, {
-      songId: song.songId,
-      startS: song.snippetStartS,
-      lenS: song.snippetLenS ?? room.config.snippetLenS,
-    });
+    this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
+    return room;
+  }
+
+  /** Any player can re-play the snippet on the hub, once the current play finishes. */
+  replay(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (Date.now() < game.active.snippetEndsAt) return room; // still playing
+
+    const song = game.active.song;
+    const lenS = song.snippetLenS ?? room.config.snippetLenS;
+    game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
+    this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
+    this.hooks.broadcast(room.code);
     return room;
   }
 
@@ -456,14 +478,18 @@ export class RoomManager {
     team.placerIndex += 1;
     game.used.add(song.songId);
     game.turnCounter += 1;
-    game.active = { song, teamId: team.teamId, placerId: placer.id, phase: "placing", steal: null };
+    const lenS = song.snippetLenS ?? room.config.snippetLenS;
+    game.active = {
+      song,
+      teamId: team.teamId,
+      placerId: placer.id,
+      phase: "placing",
+      steal: null,
+      snippetEndsAt: Date.now() + lenS * 1000 + 1000,
+    };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
-    this.hooks.playAudioToHubs(room.code, {
-      songId: song.songId,
-      startS: song.snippetStartS,
-      lenS: song.snippetLenS ?? room.config.snippetLenS,
-    });
+    this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
 
     if (placer.isBot) {
       const turnId = game.turnCounter;
@@ -534,6 +560,7 @@ export class RoomManager {
             placerIsBot: room.players.get(game.active.placerId)?.isBot ?? false,
             phase: game.active.phase,
             snippetLenS: game.active.song.snippetLenS ?? room.config.snippetLenS,
+            snippetPlayingUntil: game.active.snippetEndsAt,
             steal:
               game.active.steal === null
                 ? null

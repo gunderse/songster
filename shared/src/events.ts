@@ -46,6 +46,7 @@ export interface ClientToServerEvents {
   "player:placeCard": (payload: { index: number }) => void;
   "player:useSkip": () => void;
   "player:stealPlace": (payload: { index: number }) => void;
+  "player:replay": () => void;
   "admin:addBot": (payload: { code: string }) => void;
   "admin:removeBot": (payload: { code: string; playerId: string }) => void;
 }
