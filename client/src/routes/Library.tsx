@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { LibrarySong, LibraryStats, SongStatus, SongUpdate, YearSuggestion } from "@songster/shared/library";
+import type {
+  LibraryFacets,
+  LibrarySong,
+  LibraryStats,
+  SongStatus,
+  SongUpdate,
+  YearSuggestion,
+} from "@songster/shared/library";
 
 import {
   artUrl,
   audioStreamUrl,
   fetchAiStatus,
+  fetchFacets,
   fetchSongs,
   fetchStats,
   patchSong,
@@ -25,6 +33,9 @@ export function Library() {
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>("flagged");
   const [search, setSearch] = useState("");
+  const [genreFilter, setGenreFilter] = useState("");
+  const [tagFilter, setTagFilter] = useState("");
+  const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -36,15 +47,26 @@ export function Library() {
   const loadSongs = useCallback(async () => {
     setLoading(true);
     try {
-      const list = await fetchSongs({ status, flaggedOnly, sort, search: search.trim() || undefined });
+      const list = await fetchSongs({
+        status,
+        flaggedOnly,
+        sort,
+        search: search.trim() || undefined,
+        genre: genreFilter || undefined,
+        tag: tagFilter || undefined,
+      });
       setSongs(list);
     } finally {
       setLoading(false);
     }
-  }, [status, flaggedOnly, sort, search]);
+  }, [status, flaggedOnly, sort, search, genreFilter, tagFilter]);
 
   const refreshStats = useCallback(async () => {
     setStats(await fetchStats());
+  }, []);
+
+  const refreshFacets = useCallback(async () => {
+    setFacets(await fetchFacets());
   }, []);
 
   useEffect(() => {
@@ -53,8 +75,9 @@ export function Library() {
 
   useEffect(() => {
     void refreshStats();
+    void refreshFacets();
     fetchAiStatus().then(setAi).catch(() => setAi({ ok: false, model: "?", error: "unreachable" }));
-  }, [refreshStats]);
+  }, [refreshStats, refreshFacets]);
 
   const stopPreview = useCallback(() => {
     if (stopTimer.current !== undefined) window.clearTimeout(stopTimer.current);
@@ -96,12 +119,13 @@ export function Library() {
         const updated = await patchSong(id, update);
         setSongs((prev) => prev.map((s) => (s.id === id ? updated : s)));
         void refreshStats();
+        void refreshFacets();
         return updated;
       } finally {
         setBusy(null);
       }
     },
-    [refreshStats],
+    [refreshStats, refreshFacets],
   );
 
   return (
@@ -154,6 +178,8 @@ export function Library() {
             placeholder="Search title / artist / album…"
             className="min-w-56 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 outline-none focus:border-indigo-500"
           />
+          <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
+          <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
@@ -287,6 +313,30 @@ function SongRow(props: {
           )}
           {error !== null && <span className="text-xs text-rose-400">{error}</span>}
         </div>
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {song.genres.map((genre) => (
+            <RemovableChip
+              key={`g-${genre}`}
+              label={genre}
+              tone="genre"
+              onRemove={() => onPatch({ genres: song.genres.filter((value) => value !== genre) })}
+            />
+          ))}
+          {song.tags.map((tag) => (
+            <RemovableChip
+              key={`t-${tag}`}
+              label={tag}
+              tone="tag"
+              onRemove={() => onPatch({ tags: song.tags.filter((value) => value !== tag) })}
+            />
+          ))}
+          <TagAdder
+            onAdd={(value) => {
+              if (!song.tags.includes(value)) void onPatch({ tags: [...song.tags, value] });
+            }}
+          />
+        </div>
       </div>
 
       <div className="flex items-start gap-2">
@@ -404,5 +454,60 @@ function Segmented<T extends string>(props: {
         </button>
       ))}
     </div>
+  );
+}
+
+function FacetSelect(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; count: number }>;
+}) {
+  return (
+    <select
+      value={props.value}
+      onChange={(e) => props.onChange(e.target.value)}
+      className={`rounded-md border bg-slate-900 px-2 py-1.5 ${
+        props.value ? "border-indigo-600 text-indigo-200" : "border-slate-700"
+      }`}
+    >
+      <option value="">All {props.label.toLowerCase()}s</option>
+      {props.options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {props.label}: {option.value} ({option.count})
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function RemovableChip(props: { label: string; tone: "genre" | "tag"; onRemove: () => void }) {
+  const tone = props.tone === "genre" ? "bg-indigo-900/40 text-indigo-200" : "bg-teal-900/40 text-teal-200";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${tone}`}>
+      {props.label}
+      <button type="button" onClick={props.onRemove} title="remove" className="text-slate-400 hover:text-rose-300">
+        ×
+      </button>
+    </span>
+  );
+}
+
+function TagAdder(props: { onAdd: (value: string) => void }) {
+  const [value, setValue] = useState("");
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          const trimmed = value.trim();
+          if (trimmed.length > 0) props.onAdd(trimmed);
+          setValue("");
+        }
+      }}
+      placeholder="+ tag"
+      className="w-20 rounded border border-dashed border-slate-700 bg-transparent px-1.5 py-0.5 text-xs text-slate-300 outline-none focus:border-teal-500"
+    />
   );
 }

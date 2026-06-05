@@ -10,7 +10,7 @@ import { musicDir, ollamaModel } from "../config.js";
 import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { scanLibrary } from "./scan.js";
-import { getSong, getStats, listSongs, updateSong } from "./songs-repo.js";
+import { getFacets, getSong, getStats, listSongs, updateSong } from "./songs-repo.js";
 
 export function createLibraryRouter(db: DatabaseType.Database): Router {
   const router = Router();
@@ -26,6 +26,10 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
 
   router.get("/stats", (_req, res) => {
     res.json(getStats(db));
+  });
+
+  router.get("/facets", (_req, res) => {
+    res.json(getFacets(db));
   });
 
   router.patch("/songs/:id", (req, res) => {

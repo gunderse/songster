@@ -124,6 +124,9 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
       updated_at = excluded.updated_at
   `);
 
+  // Seed the one-to-many genre set from folder + ID3 without removing curator additions.
+  const ensureGenre = db.prepare("INSERT OR IGNORE INTO song_genres (song_id, genre) VALUES (?, ?)");
+
   const summary: ScanSummary = {
     musicDir,
     scanned: 0,
@@ -175,6 +178,9 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
         now: Date.now(),
       };
       upsert.run(row);
+
+      if (row.genre !== null && row.genre.length > 0) ensureGenre.run(id, row.genre);
+      if (meta.genreTag !== null && meta.genreTag !== row.genre) ensureGenre.run(id, meta.genreTag);
 
       if (existing.has(relativePath)) summary.updated += 1;
       else summary.inserted += 1;

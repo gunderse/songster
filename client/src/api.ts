@@ -1,4 +1,5 @@
 import type {
+  LibraryFacets,
   LibrarySong,
   LibraryStats,
   SongListQuery,
@@ -32,8 +33,14 @@ export function fetchSongs(query: Partial<SongListQuery>): Promise<LibrarySong[]
   if (query.status) params.set("status", query.status);
   if (query.flaggedOnly) params.set("flaggedOnly", "true");
   if (query.search) params.set("search", query.search);
+  if (query.genre) params.set("genre", query.genre);
+  if (query.tag) params.set("tag", query.tag);
   if (query.sort) params.set("sort", query.sort);
   return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`).then((r) => r.songs);
+}
+
+export function fetchFacets(): Promise<LibraryFacets> {
+  return http<LibraryFacets>("/api/library/facets");
 }
 
 export function patchSong(id: string, update: SongUpdate): Promise<LibrarySong> {

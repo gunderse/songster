@@ -10,7 +10,10 @@ export interface LibrarySong {
   title: string | null;
   artist: string | null;
   album: string | null;
+  /** Primary genre (folder-derived); the full set lives in `genres`. */
   genre: string | null;
+  genres: string[];
+  tags: string[];
   rawYear: number | null;
   year: number | null;
   snippetStartS: number | null;
@@ -19,6 +22,16 @@ export interface LibrarySong {
   hasArt: boolean;
   status: SongStatus;
   suspiciousFlags: string[];
+}
+
+export interface FacetCount {
+  value: string;
+  count: number;
+}
+
+export interface LibraryFacets {
+  genres: FacetCount[];
+  tags: FacetCount[];
 }
 
 export interface LibraryStats {
@@ -35,9 +48,13 @@ export const songListQuerySchema = z.object({
   status: z.union([songStatusSchema, z.literal("all")]).default("all"),
   flaggedOnly: z.coerce.boolean().default(false),
   search: z.string().trim().max(120).optional(),
+  genre: z.string().trim().max(40).optional(),
+  tag: z.string().trim().max(40).optional(),
   sort: z.enum(["title", "artist", "year", "flagged"]).default("flagged"),
 });
 export type SongListQuery = z.infer<typeof songListQuerySchema>;
+
+const tagValue = z.string().trim().min(1).max(40);
 
 export const songUpdateSchema = z
   .object({
@@ -47,6 +64,8 @@ export const songUpdateSchema = z
     title: z.string().trim().min(1).max(200),
     artist: z.string().trim().min(1).max(200),
     status: songStatusSchema,
+    genres: z.array(tagValue).max(30),
+    tags: z.array(tagValue).max(30),
   })
   .partial();
 export type SongUpdate = z.infer<typeof songUpdateSchema>;
