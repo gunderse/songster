@@ -11,15 +11,19 @@ import {
   type SocketData,
 } from "@songster/shared/events";
 
+import { registerAudioRoutes } from "./audio-stream.js";
 import { serverHost, serverPort } from "./config.js";
 import { initializeDatabase } from "./db.js";
+import { createLibraryRouter } from "./library/routes.js";
 import { logger } from "./logger.js";
 import { getPublicClientOrigin } from "./public-origin.js";
 
-initializeDatabase();
+const db = initializeDatabase();
 
 const app = express();
 app.use(express.json());
+app.use("/api/library", createLibraryRouter(db));
+registerAudioRoutes(app, db);
 
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, serverNow: Date.now() });

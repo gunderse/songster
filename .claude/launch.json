@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "songster-app",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export PATH=/Users/ericgundersen/Projects/claude/songster/.conda-env/bin:$PATH && export SONGSTER_SERVER_HOST=127.0.0.1 && exec pnpm dev"
+      ],
+      "port": 4337
+    }
+  ]
+}
