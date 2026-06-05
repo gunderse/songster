@@ -3,12 +3,11 @@ import { createServer } from "node:http";
 import express from "express";
 import { Server } from "socket.io";
 
-import {
-  pingSchema,
-  type ClientToServerEvents,
-  type InterServerEvents,
-  type ServerToClientEvents,
-  type SocketData,
+import type {
+  ClientToServerEvents,
+  InterServerEvents,
+  ServerToClientEvents,
+  SocketData,
 } from "@songster/shared/events";
 
 import { registerAudioRoutes } from "./audio-stream.js";
@@ -17,8 +16,11 @@ import { initializeDatabase } from "./db.js";
 import { createLibraryRouter } from "./library/routes.js";
 import { logger } from "./logger.js";
 import { getPublicClientOrigin } from "./public-origin.js";
+import { RoomManager } from "./room-service.js";
+import { registerSockets } from "./socket.js";
 
 const db = initializeDatabase();
+const manager = new RoomManager(db);
 
 const app = express();
 app.use(express.json());
@@ -35,23 +37,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
   cors: { origin: true },
 });
 
-io.on("connection", (socket) => {
-  logger.info({ socketId: socket.id }, "client connected");
-  socket.emit("hello", { message: "songster-online", serverNow: Date.now() });
-
-  socket.on("ping", (payload) => {
-    const parsed = pingSchema.safeParse(payload);
-    if (!parsed.success) {
-      logger.warn({ socketId: socket.id }, "rejected invalid ping payload");
-      return;
-    }
-    socket.emit("pong", { sentAt: parsed.data.sentAt, serverNow: Date.now() });
-  });
-
-  socket.on("disconnect", (reason) => {
-    logger.info({ socketId: socket.id, reason }, "client disconnected");
-  });
-});
+registerSockets(io, manager);
 
 httpServer.listen(serverPort, serverHost, () => {
   logger.info(

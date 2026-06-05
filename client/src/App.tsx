@@ -1,3 +1,6 @@
+import { Admin } from "./routes/Admin";
+import { Hub } from "./routes/Hub";
+import { Join } from "./routes/Join";
 import { Library } from "./routes/Library";
 
 function Home() {
@@ -6,17 +9,15 @@ function Home() {
       <h1 className="text-5xl font-black tracking-tight">🎵 Songster</h1>
       <p className="text-slate-400">LAN music party game — hear a snippet, guess the year, build your team's timeline.</p>
       <nav className="flex flex-wrap justify-center gap-3">
-        <a
-          href="/library"
-          className="rounded-lg bg-indigo-500 px-5 py-2 font-semibold text-white transition hover:bg-indigo-400"
-        >
+        <a href="/admin" className="rounded-lg bg-indigo-500 px-5 py-2 font-semibold text-white transition hover:bg-indigo-400">
+          Admin
+        </a>
+        <a href="/library" className="rounded-lg border border-slate-700 px-5 py-2 font-semibold transition hover:bg-slate-800">
           Library / Curation
         </a>
-        <span className="rounded-lg border border-slate-700 px-5 py-2 text-slate-500">Admin · M3</span>
-        <span className="rounded-lg border border-slate-700 px-5 py-2 text-slate-500">Hub · M3</span>
       </nav>
       <p className="max-w-sm text-center text-xs text-slate-500">
-        Milestones M0–M2 complete: scaffold, library ingest, curation. Game rooms arrive in M3.
+        Create a room in Admin, open the Hub on the big screen, and join from phones via the QR code.
       </p>
     </main>
   );
@@ -24,8 +25,13 @@ function Home() {
 
 export function App() {
   const path = window.location.pathname;
-  if (path.startsWith("/library")) {
-    return <Library />;
-  }
+
+  if (path.startsWith("/library")) return <Library />;
+  if (path.startsWith("/admin")) return <Admin />;
+  if (path.startsWith("/hub/")) return <Hub code={path.slice("/hub/".length).toUpperCase()} />;
+
+  const code = new URLSearchParams(window.location.search).get("code");
+  if (code !== null && code.trim().length > 0) return <Join code={code.toUpperCase()} />;
+
   return <Home />;
 }

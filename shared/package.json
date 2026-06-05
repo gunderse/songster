@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./events": "./src/events.ts",
-    "./library": "./src/library.ts"
+    "./library": "./src/library.ts",
+    "./room": "./src/room.ts"
   },
   "types": "./src/index.ts",
   "scripts": {
