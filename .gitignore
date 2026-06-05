@@ -11,3 +11,6 @@ server/data/*.db-*
 server/data/art/
 server/cache/
 server/cache/**
+
+# User-provided media library (read by the app, not source)
+assets/music/

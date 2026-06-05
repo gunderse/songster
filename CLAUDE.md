@@ -72,3 +72,4 @@ The authoritative design lives in the approved plan: `~/.claude/plans/sequential
 <!-- Format: `YYYY-MM-DD — short note about decisions or surprises`. -->
 
 2026-06-04 — M0 scaffold: pnpm monorepo + codex-matched stack, SQLite migration runner, conda env, start-songster.sh, ports 4337/4338, Socket.IO hello + ping/pong.
+2026-06-04 — M1 ingest: `assets/music/<genre>/` scanner via music-metadata → `songs` table (42 ingested), genre from folder name, suspicious-year flags (reissue/remix/live/missing/various/artist-outlier), filename-title fallback, embedded-art extraction to `data/art/`, snippet-start defaults, idempotent re-scan. `pnpm scan`; node:test for the heuristic. NOTE: current library clusters ~2001–2006 — a timeline game needs wider decade spread.

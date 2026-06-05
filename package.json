@@ -10,6 +10,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @songster/server test",
-    "db:migrate": "pnpm --filter @songster/server db:migrate"
+    "db:migrate": "pnpm --filter @songster/server db:migrate",
+    "scan": "pnpm --filter @songster/server scan"
   }
 }

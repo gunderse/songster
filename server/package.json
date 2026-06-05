@@ -8,12 +8,14 @@
     "build": "tsc -p tsconfig.json",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "db:migrate": "tsx src/scripts/migrate.ts"
+    "db:migrate": "tsx src/scripts/migrate.ts",
+    "scan": "tsx src/scripts/scan.ts"
   },
   "dependencies": {
     "@songster/shared": "workspace:*",
     "better-sqlite3": "^12.10.0",
     "express": "^5.2.1",
+    "music-metadata": "^11.12.3",
     "pino": "^10.3.1",
     "socket.io": "^4.8.3",
     "zod": "^4.4.3"

@@ -1,3 +1,5 @@
+import path from "node:path";
+
 /** Central runtime configuration, read from SONGSTER_* env vars. */
 
 export const serverPort = Number(process.env.SONGSTER_SERVER_PORT ?? process.env.PORT ?? 4338);
@@ -10,8 +12,12 @@ export const clientPort = Number(process.env.SONGSTER_CLIENT_PORT ?? 4337);
  */
 export const serverHost = process.env.SONGSTER_SERVER_HOST?.trim() || "127.0.0.1";
 
-/** Absolute path to the folder of mp3s to ingest (set in M1). */
-export const musicDir = process.env.SONGSTER_MUSIC_DIR?.trim() || "";
+/**
+ * Absolute path to the folder of mp3s to ingest. Defaults to the in-repo
+ * assets/music folder (genre subfolders inside). Override with SONGSTER_MUSIC_DIR.
+ */
+const repoRoot = path.resolve(import.meta.dirname, "../..");
+export const musicDir = process.env.SONGSTER_MUSIC_DIR?.trim() || path.join(repoRoot, "assets", "music");
 
 /** Local LAN AI services (used from M6 onward). */
 export const ollamaUrl = (process.env.SONGSTER_OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
