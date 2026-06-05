@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type DatabaseType from "better-sqlite3";
 
-import type { ActiveTurnView, GameView, TimelineCardView, TurnResultView } from "@songster/shared/game";
+import type { ActiveTurnView, GameView, StealResultView, TimelineCardView, TurnResultView } from "@songster/shared/game";
 import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
 
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
@@ -35,6 +35,7 @@ interface Player {
   connected: boolean;
   joinedAt: number;
   isBot: boolean;
+  tokens: number;
 }
 
 interface Team {
@@ -54,6 +55,7 @@ interface ActiveTurn {
   teamId: string;
   placerId: string;
   phase: "placing" | "revealing";
+  steal: { playerId: string; teamId: string; index: number } | null;
 }
 
 interface Game {
@@ -163,6 +165,7 @@ export class RoomManager {
       connected: true,
       joinedAt: Date.now(),
       isBot: false,
+      tokens: 0,
     };
     room.players.set(player.id, player);
     return { ok: true, room, player };
@@ -181,6 +184,7 @@ export class RoomManager {
       connected: true,
       joinedAt: Date.now(),
       isBot: true,
+      tokens: 0,
     };
     room.players.set(bot.id, bot);
     return room;
@@ -286,6 +290,9 @@ export class RoomManager {
       winnerTeamId: null,
       revealTimer: null,
     };
+    for (const player of room.players.values()) {
+      player.tokens = room.config.tokensPerPlayer;
+    }
     room.status = "playing";
     this.beginTurn(room);
     return room;
@@ -295,6 +302,53 @@ export class RoomManager {
     const found = this.findPlayerBySocket(socketId);
     if (found === undefined) return undefined;
     return this.resolvePlacement(found.room, found.player.id, index);
+  }
+
+  /** The active placer spends a token to pass — draw a new song for the same placer. */
+  useSkip(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game.active.placerId !== player.id || player.tokens <= 0) return room;
+
+    player.tokens -= 1;
+    const song = sampleOne(this.db, room.config.deck, [...game.used]);
+    if (song === null) {
+      this.finishGame(room);
+      return room;
+    }
+    game.used.add(song.songId);
+    game.turnCounter += 1;
+    game.active = { song, teamId: game.active.teamId, placerId: game.active.placerId, phase: "placing", steal: null };
+    game.lastResult = null;
+    this.hooks.broadcast(room.code);
+    this.hooks.playAudioToHubs(room.code, {
+      songId: song.songId,
+      startS: song.snippetStartS,
+      lenS: song.snippetLenS ?? room.config.snippetLenS,
+    });
+    return room;
+  }
+
+  /** An opponent spends a token to challenge: they place the song on their OWN timeline. */
+  stealPlace(socketId: string, index: number): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (player.teamId === null || player.teamId === game.active.teamId) return room; // opponents only
+    if (player.tokens <= 0 || game.active.steal !== null) return room; // one steal per turn
+
+    const stealerTeam = game.teams.find((t) => t.teamId === player.teamId);
+    if (stealerTeam === undefined) return room;
+    const slot = Math.max(0, Math.min(index, stealerTeam.timeline.length));
+    player.tokens -= 1;
+    game.active.steal = { playerId: player.id, teamId: player.teamId, index: slot };
+    this.hooks.broadcast(room.code);
+    return room;
   }
 
   private resolvePlacement(room: Room, playerId: string, index: number): Room {
@@ -313,6 +367,27 @@ export class RoomManager {
       team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
     }
 
+    // Resolve a Steal: an opponent wins the card only if the placer was WRONG
+    // and the stealer's own placement is correct.
+    let stealResult: StealResultView | null = null;
+    let stealWonTeamId: string | null = null;
+    const steal = game.active.steal;
+    if (steal !== null) {
+      const stealerTeam = game.teams.find((t) => t.teamId === steal.teamId);
+      const stealCorrect =
+        !correct && stealerTeam !== undefined && isCorrectPlacement(stealerTeam.timeline, steal.index, song.year);
+      if (stealCorrect && stealerTeam !== undefined) {
+        stealerTeam.timeline = insertCardAt(stealerTeam.timeline, steal.index, sampledToCard(song, false));
+        if (hasWon(stealerTeam.timeline.length, game.target)) stealWonTeamId = stealerTeam.teamId;
+      }
+      stealResult = {
+        teamId: steal.teamId,
+        playerName: room.players.get(steal.playerId)?.name ?? "—",
+        correct: stealCorrect,
+        placedIndex: steal.index,
+      };
+    }
+
     game.lastResult = {
       teamId: team.teamId,
       placerId: playerId,
@@ -320,12 +395,14 @@ export class RoomManager {
       correct,
       placedIndex: slot,
       song: { songId: song.songId, year: song.year, title: song.title, artist: song.artist, hasArt: song.hasArt },
+      steal: stealResult,
     };
     game.active.phase = "revealing";
     this.hooks.broadcast(room.code);
 
-    if (correct && hasWon(team.timeline.length, game.target)) {
-      game.winnerTeamId = team.teamId;
+    const placerWon = correct && hasWon(team.timeline.length, game.target);
+    if (placerWon || stealWonTeamId !== null) {
+      game.winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
       this.finishGame(room);
       return room;
     }
@@ -379,7 +456,7 @@ export class RoomManager {
     team.placerIndex += 1;
     game.used.add(song.songId);
     game.turnCounter += 1;
-    game.active = { song, teamId: team.teamId, placerId: placer.id, phase: "placing" };
+    game.active = { song, teamId: team.teamId, placerId: placer.id, phase: "placing", steal: null };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, {
@@ -430,7 +507,7 @@ export class RoomManager {
     }));
     const players: PlayerView[] = [...room.players.values()]
       .sort((a, b) => a.joinedAt - b.joinedAt)
-      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected, isBot: p.isBot }));
+      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected, isBot: p.isBot, tokens: p.tokens }));
     return {
       code: room.code,
       status: room.status,
@@ -457,6 +534,13 @@ export class RoomManager {
             placerIsBot: room.players.get(game.active.placerId)?.isBot ?? false,
             phase: game.active.phase,
             snippetLenS: game.active.song.snippetLenS ?? room.config.snippetLenS,
+            steal:
+              game.active.steal === null
+                ? null
+                : {
+                    teamId: game.active.steal.teamId,
+                    playerName: room.players.get(game.active.steal.playerId)?.name ?? "—",
+                  },
           };
 
     return {

@@ -45,6 +45,11 @@ export function HubGame({ room }: { room: RoomState }) {
             <span className="text-slate-400"> · {active.placerName} is placing</span>
           </h2>
         )}
+        {active.steal !== null && !revealing && (
+          <p className="mt-2 text-2xl font-bold text-amber-400">
+            🥷 {room.teams.find((t) => t.id === active.steal!.teamId)?.name} is stealing!
+          </p>
+        )}
       </div>
 
       {/* The card being placed: a mystery disc while placing, the reveal when revealing. */}
@@ -60,6 +65,17 @@ export function HubGame({ room }: { room: RoomState }) {
             <div className="text-6xl font-black tabular-nums">{result.song.year}</div>
             <div className="text-center text-lg font-semibold">{result.song.title ?? "Unknown"}</div>
             <div className="text-center text-slate-400">{result.song.artist ?? ""}</div>
+            {result.steal !== null && (
+              <div
+                className="mt-1 rounded-lg px-3 py-1 text-center text-sm font-bold"
+                style={{
+                  background: result.steal.correct ? "#78350f" : "transparent",
+                  color: result.steal.correct ? "#fbbf24" : "#64748b",
+                }}
+              >
+                {result.steal.correct ? `🥷 STOLEN by ${result.steal.playerName}!` : `${result.steal.playerName}'s steal missed`}
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex h-44 w-44 animate-pulse items-center justify-center rounded-full border-4 border-slate-700 bg-slate-900 text-7xl">

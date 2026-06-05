@@ -44,6 +44,8 @@ export interface ClientToServerEvents {
   "room:start": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
   "player:placeCard": (payload: { index: number }) => void;
+  "player:useSkip": () => void;
+  "player:stealPlace": (payload: { index: number }) => void;
   "admin:addBot": (payload: { code: string }) => void;
   "admin:removeBot": (payload: { code: string; playerId: string }) => void;
 }

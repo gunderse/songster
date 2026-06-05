@@ -95,6 +95,16 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       manager.placeCard(socket.id, parsed.data.index);
     });
 
+    socket.on("player:useSkip", () => {
+      manager.useSkip(socket.id);
+    });
+
+    socket.on("player:stealPlace", (payload) => {
+      const parsed = placeCardSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.stealPlace(socket.id, parsed.data.index);
+    });
+
     socket.on("hub:join", (payload, ack) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) {

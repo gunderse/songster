@@ -20,6 +20,8 @@ export interface ActiveTurnView {
   placerIsBot: boolean;
   phase: "placing" | "revealing";
   snippetLenS: number;
+  /** An opponent who has spent a Steal token on this turn (spoiler-safe). */
+  steal: { teamId: string; playerName: string } | null;
 }
 
 export interface RevealedSong {
@@ -30,6 +32,13 @@ export interface RevealedSong {
   hasArt: boolean;
 }
 
+export interface StealResultView {
+  teamId: string;
+  playerName: string;
+  correct: boolean;
+  placedIndex: number;
+}
+
 export interface TurnResultView {
   teamId: string;
   placerId: string;
@@ -37,6 +46,8 @@ export interface TurnResultView {
   correct: boolean;
   placedIndex: number;
   song: RevealedSong;
+  /** A Steal resolution, when an opponent challenged this turn. */
+  steal: StealResultView | null;
 }
 
 export interface GameView {

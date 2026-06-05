@@ -15,6 +15,8 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [committed, setCommitted] = useState(false);
+  const [stealMode, setStealMode] = useState(false);
+  const [stealSlot, setStealSlot] = useState<number | null>(null);
 
   // Reset placement state every turn (turnId changes even when the same player
   // places twice in a row, e.g. solo play) and when the phase flips.
@@ -22,6 +24,8 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   useEffect(() => {
     setSelectedSlot(null);
     setCommitted(false);
+    setStealMode(false);
+    setStealSlot(null);
   }, [turnSig]);
 
   if (game === null || me === null) {
@@ -58,6 +62,11 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
         <p className="mt-2 text-sm" style={{ color: result.correct ? "#34d399" : "#fb7185" }}>
           {result.placerName} {result.correct ? "nailed it" : "missed"} for {activeTeam?.name}
         </p>
+        {result.steal !== null && (
+          <p className="text-sm font-semibold" style={{ color: result.steal.correct ? "#fbbf24" : "#64748b" }}>
+            {result.steal.correct ? `🥷 STOLEN by ${result.steal.playerName}!` : `${result.steal.playerName}'s steal missed`}
+          </p>
+        )}
       </main>
     );
   }
@@ -74,18 +83,77 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
         <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} />
 
-        <button
-          type="button"
-          disabled={selectedSlot === null || committed}
-          onClick={() => {
-            if (selectedSlot === null) return;
-            socket.emit("player:placeCard", { index: selectedSlot });
-            setCommitted(true);
-          }}
-          className="mt-auto rounded-xl bg-emerald-600 px-6 py-3 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
-        >
-          {committed ? "Locked in…" : selectedSlot === null ? "Pick a spot" : "Place it here"}
-        </button>
+        <div className="mt-auto flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={selectedSlot === null || committed}
+            onClick={() => {
+              if (selectedSlot === null) return;
+              socket.emit("player:placeCard", { index: selectedSlot });
+              setCommitted(true);
+            }}
+            className="rounded-xl bg-emerald-600 px-6 py-3 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+          >
+            {committed ? "Locked in…" : selectedSlot === null ? "Pick a spot" : "Place it here"}
+          </button>
+          {!committed && me.tokens > 0 && (
+            <button
+              type="button"
+              onClick={() => socket.emit("player:useSkip")}
+              className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+            >
+              🎟️ Skip this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"} left
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  const canSteal =
+    active !== null &&
+    active.phase === "placing" &&
+    me.teamId !== null &&
+    me.teamId !== active.teamId &&
+    me.tokens > 0 &&
+    active.steal === null;
+
+  // ── steal mode: place your challenge on your own timeline ─────────────
+  if (stealMode && active !== null) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100">
+        <div className="text-center">
+          <div className="text-sm font-semibold text-amber-400">🥷 Stealing from {activeTeam?.name}</div>
+          <h1 className="text-2xl font-black">Where does it go?</h1>
+          <p className="text-sm text-slate-400">
+            Place it on YOUR timeline. If they're wrong and you're right, you take the card.
+          </p>
+        </div>
+        <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={stealSlot} onSelect={setStealSlot} />
+        <div className="mt-auto flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={stealSlot === null}
+            onClick={() => {
+              if (stealSlot === null) return;
+              socket.emit("player:stealPlace", { index: stealSlot });
+              setStealMode(false);
+            }}
+            className="rounded-xl bg-amber-600 px-6 py-3 text-lg font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+          >
+            {stealSlot === null ? "Pick a spot" : "Steal it here! (1 token)"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setStealMode(false);
+              setStealSlot(null);
+            }}
+            className="text-sm text-slate-500"
+          >
+            Cancel
+          </button>
+        </div>
       </main>
     );
   }
@@ -104,6 +172,21 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           <h1 className="text-xl font-bold">Get ready…</h1>
         )}
       </div>
+
+      {active !== null && me.teamId !== active.teamId && active.steal !== null && (
+        <p className="text-center text-sm font-semibold text-amber-400">
+          🥷 {active.steal.playerName} ({room.teams.find((t) => t.id === active.steal!.teamId)?.name}) is stealing!
+        </p>
+      )}
+      {canSteal && (
+        <button
+          type="button"
+          onClick={() => setStealMode(true)}
+          className="self-center rounded-lg bg-amber-600/90 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-500"
+        >
+          🥷 Steal this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"}
+        </button>
+      )}
 
       <div>
         <div className="mb-1 text-sm text-slate-500">Your team{myTeam !== null ? ` · ${myTeam.name}` : ""}</div>

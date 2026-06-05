@@ -36,6 +36,8 @@ export interface PlayerView {
   teamId: string | null;
   connected: boolean;
   isBot: boolean;
+  /** Remaining Skip/Steal tokens (0 until the game starts). */
+  tokens: number;
 }
 
 export interface RoomState {
