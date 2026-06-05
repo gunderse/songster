@@ -35,6 +35,7 @@ export interface PlayerView {
   name: string;
   teamId: string | null;
   connected: boolean;
+  isBot: boolean;
 }
 
 export interface RoomState {
@@ -60,6 +61,7 @@ export const joinRoomSchema = z.object({
 });
 export const setTeamSchema = z.object({ teamId: z.string().min(1).max(64) });
 export const roomCodeSchema = z.object({ code: roomCode });
+export const removeBotSchema = z.object({ code: roomCode, playerId: z.string().trim().min(1).max(64) });
 
 export type CreateAck = { ok: true; code: string } | { ok: false; error: string };
 export type JoinAck = { ok: true; playerId: string; teamId: string } | { ok: false; error: string };

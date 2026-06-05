@@ -63,6 +63,7 @@ export const songUpdateSchema = z
     snippetLenS: z.number().min(1).max(60).nullable(),
     title: z.string().trim().min(1).max(200),
     artist: z.string().trim().min(1).max(200),
+    album: z.string().trim().min(1).max(200),
     status: songStatusSchema,
     genres: z.array(tagValue).max(30),
     tags: z.array(tagValue).max(30),

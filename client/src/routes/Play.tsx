@@ -16,7 +16,9 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [committed, setCommitted] = useState(false);
 
-  const turnSig = active ? `${active.teamId}|${active.placerId}|${active.phase}` : "none";
+  // Reset placement state every turn (turnId changes even when the same player
+  // places twice in a row, e.g. solo play) and when the phase flips.
+  const turnSig = active ? `${active.turnId}|${active.phase}` : "none";
   useEffect(() => {
     setSelectedSlot(null);
     setCommitted(false);

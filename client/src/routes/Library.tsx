@@ -225,6 +225,9 @@ function SongRow(props: {
   const { song, busy, previewing, aiAvailable, onPreview, onPatch } = props;
   const [year, setYear] = useState<string>(song.year?.toString() ?? "");
   const [start, setStart] = useState<string>(song.snippetStartS?.toString() ?? "");
+  const [title, setTitle] = useState(song.title ?? "");
+  const [artist, setArtist] = useState(song.artist ?? "");
+  const [album, setAlbum] = useState(song.album ?? "");
   const [suggestion, setSuggestion] = useState<YearSuggestion | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -232,7 +235,18 @@ function SongRow(props: {
   useEffect(() => {
     setYear(song.year?.toString() ?? "");
     setStart(song.snippetStartS?.toString() ?? "");
-  }, [song.year, song.snippetStartS]);
+    setTitle(song.title ?? "");
+    setArtist(song.artist ?? "");
+    setAlbum(song.album ?? "");
+  }, [song.year, song.snippetStartS, song.title, song.artist, song.album]);
+
+  const commitText = (key: "title" | "artist" | "album", value: string, current: string | null) => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed === (current ?? "")) return;
+    const update: SongUpdate = {};
+    update[key] = trimmed;
+    void onPatch(update);
+  };
 
   const commitYear = () => {
     const trimmed = year.trim();
@@ -289,13 +303,32 @@ function SongRow(props: {
 
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="truncate font-semibold">{song.title ?? "(untitled)"}</span>
-          {song.status === "approved" && <span className="text-emerald-400">✓</span>}
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => commitText("title", title, song.title)}
+            placeholder="title"
+            className="min-w-0 flex-1 truncate rounded bg-transparent font-semibold text-slate-100 outline-none hover:bg-slate-800/50 focus:bg-slate-800 focus:px-1"
+          />
+          {song.status === "approved" && <span className="shrink-0 text-emerald-400">✓</span>}
         </div>
-        <div className="truncate text-sm text-slate-400">
-          {song.artist ?? "unknown artist"}
-          {song.album !== null && <span className="text-slate-600"> · {song.album}</span>}
-          {song.genre !== null && <span className="text-slate-600"> · {song.genre}</span>}
+        <div className="flex items-center gap-1 text-sm text-slate-400">
+          <input
+            value={artist}
+            onChange={(e) => setArtist(e.target.value)}
+            onBlur={() => commitText("artist", artist, song.artist)}
+            placeholder="artist"
+            className="w-32 min-w-24 flex-1 rounded bg-transparent outline-none hover:bg-slate-800/50 focus:bg-slate-800 focus:px-1"
+          />
+          <span className="shrink-0 text-slate-600">·</span>
+          <input
+            value={album}
+            onChange={(e) => setAlbum(e.target.value)}
+            onBlur={() => commitText("album", album, song.album)}
+            placeholder="album"
+            className="w-32 min-w-24 flex-1 rounded bg-transparent text-slate-500 outline-none hover:bg-slate-800/50 focus:bg-slate-800 focus:px-1"
+          />
+          {song.genre !== null && <span className="shrink-0 text-slate-600">· {song.genre}</span>}
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           {song.rawYear !== null && (

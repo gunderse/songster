@@ -107,6 +107,31 @@ export function Admin() {
             <Roster room={room} />
           </div>
 
+          {room.status === "lobby" && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => socket.emit("admin:addBot", { code })}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
+              >
+                + Add bot 🤖
+              </button>
+              {room.players
+                .filter((p) => p.isBot)
+                .map((bot) => (
+                  <button
+                    key={bot.id}
+                    type="button"
+                    onClick={() => socket.emit("admin:removeBot", { code, playerId: bot.id })}
+                    className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300 hover:bg-rose-900/40"
+                    title="Remove bot"
+                  >
+                    {bot.name} ✕
+                  </button>
+                ))}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => socket.emit("room:start", { code })}

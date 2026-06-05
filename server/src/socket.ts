@@ -8,7 +8,7 @@ import {
   type SocketData,
 } from "@songster/shared/events";
 import { placeCardSchema } from "@songster/shared/game";
-import { createRoomSchema, joinRoomSchema, roomCodeSchema, setTeamSchema } from "@songster/shared/room";
+import { createRoomSchema, joinRoomSchema, removeBotSchema, roomCodeSchema, setTeamSchema } from "@songster/shared/room";
 
 import { logger } from "./logger.js";
 import type { RoomManager } from "./room-service.js";
@@ -73,6 +73,20 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       if (!parsed.success) return;
       const room = manager.startGame(parsed.data.code);
       if (room !== undefined) logger.info({ code: room.code }, "game started");
+    });
+
+    socket.on("admin:addBot", (payload) => {
+      const parsed = roomCodeSchema.safeParse(payload);
+      if (!parsed.success) return;
+      const room = manager.addBot(parsed.data.code);
+      if (room !== undefined) manager.broadcast(room.code);
+    });
+
+    socket.on("admin:removeBot", (payload) => {
+      const parsed = removeBotSchema.safeParse(payload);
+      if (!parsed.success) return;
+      const room = manager.removeBot(parsed.data.code, parsed.data.playerId);
+      if (room !== undefined) manager.broadcast(room.code);
     });
 
     socket.on("player:placeCard", (payload) => {

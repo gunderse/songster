@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { socket } from "../socket";
 import { useRoomState } from "../useRoom";
@@ -10,6 +10,20 @@ export function Join({ code }: { code: string }) {
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const joinedNameRef = useRef<string | null>(null);
+
+  // Re-associate this socket with our player after any reconnect (so a phone
+  // that briefly drops mid-game keeps its place instead of getting stuck).
+  useEffect(() => {
+    function onReconnect() {
+      const joinedName = joinedNameRef.current;
+      if (joinedName !== null) socket.emit("room:join", { code, name: joinedName }, () => undefined);
+    }
+    socket.on("connect", onReconnect);
+    return () => {
+      socket.off("connect", onReconnect);
+    };
+  }, [code]);
 
   function join() {
     const trimmed = name.trim();
@@ -19,8 +33,12 @@ export function Join({ code }: { code: string }) {
     const emit = () =>
       socket.emit("room:join", { code, name: trimmed }, (res) => {
         setBusy(false);
-        if (res.ok) setPlayerId(res.playerId);
-        else setError(res.error);
+        if (res.ok) {
+          joinedNameRef.current = trimmed;
+          setPlayerId(res.playerId);
+        } else {
+          setError(res.error);
+        }
       });
     if (socket.connected) emit();
     else {

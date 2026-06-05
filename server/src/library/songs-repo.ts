@@ -124,12 +124,13 @@ export function getSong(db: DatabaseType.Database, id: string): LibrarySong | nu
   return attach(db, [row])[0] ?? null;
 }
 
-const SCALAR_COLUMN: Record<"year" | "snippetStartS" | "snippetLenS" | "title" | "artist" | "status", string> = {
+const SCALAR_COLUMN: Record<"year" | "snippetStartS" | "snippetLenS" | "title" | "artist" | "album" | "status", string> = {
   year: "year",
   snippetStartS: "snippet_start_s",
   snippetLenS: "snippet_len_s",
   title: "title",
   artist: "artist",
+  album: "album",
   status: "status",
 };
 

@@ -21,6 +21,12 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 /** How long the reveal stays up before the next turn begins. */
 const REVEAL_MS = 5000;
 
+/** Bots "think" for a beat before placing randomly. */
+const BOT_MIN_MS = 1800;
+const BOT_JITTER_MS = 1600;
+
+const BOT_NAMES = ["Robby", "Circuit", "Vinyl", "Disco-Tron", "Mixtape", "Jukebot", "Decibel", "Synthia", "Cassette", "Boombox"];
+
 interface Player {
   id: string;
   name: string;
@@ -28,6 +34,7 @@ interface Player {
   socketId: string | null;
   connected: boolean;
   joinedAt: number;
+  isBot: boolean;
 }
 
 interface Team {
@@ -54,6 +61,7 @@ interface Game {
   teams: GameTeam[];
   used: Set<string>;
   turnIndex: number;
+  turnCounter: number;
   active: ActiveTurn | null;
   lastResult: TurnResultView | null;
   winnerTeamId: string | null;
@@ -128,18 +136,24 @@ export class RoomManager {
   join(code: string, socketId: string, name: string): JoinResult {
     const room = this.getRoom(code);
     if (room === undefined) return { ok: false, error: "Room not found." };
-    if (room.status !== "lobby") return { ok: false, error: "This game has already started." };
 
     const trimmed = name.trim();
     if (trimmed.length === 0) return { ok: false, error: "Enter a name." };
 
-    const existing = [...room.players.values()].find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
+    const existing = [...room.players.values()].find((p) => !p.isBot && p.name.toLowerCase() === trimmed.toLowerCase());
     if (existing !== undefined) {
-      if (existing.connected) return { ok: false, error: "That name is already taken in this room." };
+      // Reconnect (re-associate the socket) — allowed even mid-game so a phone
+      // that briefly drops can rejoin and keep playing.
+      if (existing.connected && existing.socketId !== null && existing.socketId !== socketId) {
+        return { ok: false, error: "That name is already taken in this room." };
+      }
       existing.connected = true;
       existing.socketId = socketId;
+      this.resumeIfPaused(room);
       return { ok: true, room, player: existing };
     }
+
+    if (room.status !== "lobby") return { ok: false, error: "This game has already started." };
 
     const player: Player = {
       id: randomUUID().slice(0, 8),
@@ -148,9 +162,44 @@ export class RoomManager {
       socketId,
       connected: true,
       joinedAt: Date.now(),
+      isBot: false,
     };
     room.players.set(player.id, player);
     return { ok: true, room, player };
+  }
+
+  addBot(code: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined || room.status !== "lobby") return room;
+    const used = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
+    const pick = BOT_NAMES.find((n) => !used.has(`bot ${n}`.toLowerCase())) ?? `Unit ${room.players.size + 1}`;
+    const bot: Player = {
+      id: randomUUID().slice(0, 8),
+      name: `Bot ${pick}`,
+      teamId: this.smallestTeam(room),
+      socketId: null,
+      connected: true,
+      joinedAt: Date.now(),
+      isBot: true,
+    };
+    room.players.set(bot.id, bot);
+    return room;
+  }
+
+  removeBot(code: string, playerId: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined) return room;
+    const player = room.players.get(playerId);
+    if (player !== undefined && player.isBot && room.status === "lobby") {
+      room.players.delete(playerId);
+    }
+    return room;
+  }
+
+  private resumeIfPaused(room: Room): void {
+    if (room.status === "playing" && room.game !== null && room.game.active === null) {
+      this.beginTurn(room);
+    }
   }
 
   setTeam(socketId: string, teamId: string): Room | undefined {
@@ -188,6 +237,22 @@ export class RoomManager {
       found.player.connected = false;
       found.player.socketId = null;
       touched = found.room;
+
+      // If the active placer drops mid-turn, move on so the game doesn't stall.
+      const game = found.room.game;
+      if (
+        game !== null &&
+        game.active !== null &&
+        game.active.phase === "placing" &&
+        game.active.placerId === found.player.id
+      ) {
+        if (game.revealTimer !== null) {
+          clearTimeout(game.revealTimer);
+          game.revealTimer = null;
+        }
+        game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+        this.beginTurn(found.room);
+      }
     }
     return touched;
   }
@@ -215,6 +280,7 @@ export class RoomManager {
       teams,
       used,
       turnIndex: 0,
+      turnCounter: 0,
       active: null,
       lastResult: null,
       winnerTeamId: null,
@@ -228,16 +294,20 @@ export class RoomManager {
   placeCard(socketId: string, index: number): Room | undefined {
     const found = this.findPlayerBySocket(socketId);
     if (found === undefined) return undefined;
-    const { room, player } = found;
+    return this.resolvePlacement(found.room, found.player.id, index);
+  }
+
+  private resolvePlacement(room: Room, playerId: string, index: number): Room {
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing") return room;
-    if (game.active.placerId !== player.id) return room;
+    if (game.active.placerId !== playerId) return room;
 
     const team = game.teams.find((t) => t.teamId === game.active!.teamId);
     if (team === undefined) return room;
 
     const slot = Math.max(0, Math.min(index, team.timeline.length));
     const song = game.active.song;
+    const placerName = room.players.get(playerId)?.name ?? "—";
     const correct = isCorrectPlacement(team.timeline, slot, song.year);
     if (correct) {
       team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
@@ -245,8 +315,8 @@ export class RoomManager {
 
     game.lastResult = {
       teamId: team.teamId,
-      placerId: player.id,
-      placerName: player.name,
+      placerId: playerId,
+      placerName,
       correct,
       placedIndex: slot,
       song: { songId: song.songId, year: song.year, title: song.title, artist: song.artist, hasArt: song.hasArt },
@@ -266,6 +336,17 @@ export class RoomManager {
       this.beginTurn(room);
     }, REVEAL_MS);
     return room;
+  }
+
+  private botPlace(room: Room, turnId: number): void {
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.turnCounter !== turnId) return;
+    const placer = room.players.get(game.active.placerId);
+    if (placer === undefined || !placer.isBot) return;
+    const team = game.teams.find((t) => t.teamId === game.active!.teamId);
+    if (team === undefined) return;
+    const index = Math.floor(Math.random() * (team.timeline.length + 1));
+    this.resolvePlacement(room, placer.id, index);
   }
 
   private beginTurn(room: Room): void {
@@ -297,6 +378,7 @@ export class RoomManager {
 
     team.placerIndex += 1;
     game.used.add(song.songId);
+    game.turnCounter += 1;
     game.active = { song, teamId: team.teamId, placerId: placer.id, phase: "placing" };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
@@ -305,6 +387,11 @@ export class RoomManager {
       startS: song.snippetStartS,
       lenS: song.snippetLenS ?? room.config.snippetLenS,
     });
+
+    if (placer.isBot) {
+      const turnId = game.turnCounter;
+      setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
+    }
   }
 
   private finishGame(room: Room): void {
@@ -343,7 +430,7 @@ export class RoomManager {
     }));
     const players: PlayerView[] = [...room.players.values()]
       .sort((a, b) => a.joinedAt - b.joinedAt)
-      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected }));
+      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected, isBot: p.isBot }));
     return {
       code: room.code,
       status: room.status,
@@ -363,9 +450,11 @@ export class RoomManager {
       game.active === null
         ? null
         : {
+            turnId: game.turnCounter,
             teamId: game.active.teamId,
             placerId: game.active.placerId,
             placerName: room.players.get(game.active.placerId)?.name ?? "—",
+            placerIsBot: room.players.get(game.active.placerId)?.isBot ?? false,
             phase: game.active.phase,
             snippetLenS: game.active.song.snippetLenS ?? room.config.snippetLenS,
           };

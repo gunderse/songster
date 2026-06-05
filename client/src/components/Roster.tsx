@@ -24,6 +24,7 @@ export function Roster({ room, size = "normal" }: { room: RoomState; size?: "nor
                   }`}
                 >
                   {player.name}
+                  {player.isBot ? " 🤖" : ""}
                 </li>
               ))}
               {members.length === 0 && <li className={`italic text-slate-600 ${big ? "text-lg" : "text-sm"}`}>empty</li>}

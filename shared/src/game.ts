@@ -12,9 +12,12 @@ export interface TimelineCardView {
 }
 
 export interface ActiveTurnView {
+  /** Monotonic id; changes every turn so clients can reset placement state. */
+  turnId: number;
   teamId: string;
   placerId: string;
   placerName: string;
+  placerIsBot: boolean;
   phase: "placing" | "revealing";
   snippetLenS: number;
 }

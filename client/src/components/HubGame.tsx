@@ -21,6 +21,15 @@ export function HubGame({ room }: { room: RoomState }) {
   }
 
   const active = game.activeTurn;
+  if (active === null) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center">
+        <div className="text-5xl">⏸️</div>
+        <h2 className="text-2xl font-bold text-slate-400">Waiting for players…</h2>
+        <Scoreboard room={room} />
+      </div>
+    );
+  }
   const result = game.lastResult;
   const activeTeam = active !== null ? room.teams.find((t) => t.id === active.teamId) : null;
   const activeCards = active !== null ? game.timelines.find((t) => t.teamId === active.teamId)?.cards ?? [] : [];
