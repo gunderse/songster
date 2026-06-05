@@ -2,7 +2,13 @@ import type { RoomState } from "@songster/shared/room";
 
 import { artUrl } from "../api";
 
-export function HubGame({ room }: { room: RoomState }) {
+export function HubGame({
+  room,
+  emcee,
+}: {
+  room: RoomState;
+  emcee?: { hostName: string; text: string } | null;
+}) {
   const game = room.game;
   if (game === null) return null;
 
@@ -83,6 +89,13 @@ export function HubGame({ room }: { room: RoomState }) {
           </div>
         )}
       </div>
+
+      {emcee != null && emcee.text.length > 0 && (
+        <div className="mx-auto max-w-2xl text-center">
+          <div className="text-sm uppercase tracking-[0.25em] text-amber-300">🎙 {emcee.hostName}</div>
+          <p className="mt-1 text-xl italic text-slate-200">“{emcee.text}”</p>
+        </div>
+      )}
 
       {/* Active team's timeline */}
       {active !== null && (

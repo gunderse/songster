@@ -10,6 +10,7 @@ import type {
   SocketData,
 } from "@songster/shared/events";
 
+import { getRevealAudioCacheDir } from "./ai/voice-generator-service.js";
 import { registerAudioRoutes } from "./audio-stream.js";
 import { serverHost, serverPort } from "./config.js";
 import { initializeDatabase } from "./db.js";
@@ -25,6 +26,7 @@ const app = express();
 app.use(express.json());
 app.use("/api/library", createLibraryRouter(db));
 registerAudioRoutes(app, db);
+app.use("/reveal-audio", express.static(getRevealAudioCacheDir()));
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, serverNow: Date.now() });
 });
@@ -42,6 +44,10 @@ const manager = new RoomManager(db, {
   playAudioToHubs: (code, audio) => {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("audio:play", audio);
+  },
+  emceeToHubs: (code, payload) => {
+    const hubs = manager.hubSocketIds(code);
+    if (hubs.length > 0) io.to(hubs).emit("emcee:play", payload);
   },
 });
 

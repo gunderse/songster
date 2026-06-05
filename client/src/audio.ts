@@ -76,6 +76,29 @@ export function stopSnippet(): void {
   }
 }
 
+let voiceEl: HTMLAudioElement | null = null;
+
+/** Play a generated emcee voice clip (separate from the song snippet). */
+export function playVoiceUrl(url: string): void {
+  stopVoice();
+  if (!unlocked) return;
+  const el = new Audio(url);
+  el.volume = 1;
+  voiceEl = el;
+  void el.play().catch(() => undefined);
+}
+
+export function stopVoice(): void {
+  if (voiceEl !== null) {
+    try {
+      voiceEl.pause();
+    } catch {
+      // ignore
+    }
+    voiceEl = null;
+  }
+}
+
 interface Tone {
   f: number;
   d: number;

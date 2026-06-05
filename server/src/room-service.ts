@@ -5,6 +5,7 @@ import type DatabaseType from "better-sqlite3";
 import type { ActiveTurnView, GameView, StealResultView, TimelineCardView, TurnResultView } from "@songster/shared/game";
 import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
 
+import { emceeService, type EmceeClip } from "./ai/emcee-service.js";
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
 import { countAvailable, sampleOne, sampleSongs, type SampledSong } from "./sampling.js";
 
@@ -57,6 +58,8 @@ interface ActiveTurn {
   phase: "placing" | "revealing";
   steal: { playerId: string; teamId: string; index: number } | null;
   snippetEndsAt: number;
+  emceeClip: EmceeClip | null;
+  emceePromise: Promise<void> | null;
 }
 
 interface Game {
@@ -69,6 +72,8 @@ interface Game {
   lastResult: TurnResultView | null;
   winnerTeamId: string | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
+  hostName?: string | null;
+  hostPromise?: Promise<string | null>;
 }
 
 interface Room {
@@ -87,6 +92,7 @@ export type JoinResult = { ok: true; room: Room; player: Player } | { ok: false;
 export interface RoomHooks {
   broadcast(code: string): void;
   playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
+  emceeToHubs(code: string, payload: { audioUrl: string; hostName: string; text: string }): void;
 }
 
 /**
@@ -330,10 +336,13 @@ export class RoomManager {
       phase: "placing",
       steal: null,
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
+      emceeClip: null,
+      emceePromise: null,
     };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
+    this.kickoffEmcee(room);
     return room;
   }
 
@@ -434,6 +443,7 @@ export class RoomManager {
       game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
       this.beginTurn(room);
     }, REVEAL_MS);
+    void this.deliverEmcee(room, game.turnCounter);
     return room;
   }
 
@@ -446,6 +456,52 @@ export class RoomManager {
     if (team === undefined) return;
     const index = Math.floor(Math.random() * (team.timeline.length + 1));
     this.resolvePlacement(room, placer.id, index);
+  }
+
+  /** Start pre-generating the emcee's reveal line for the current song (during placement). */
+  private kickoffEmcee(room: Room): void {
+    const game = room.game;
+    if (game === null || game.active === null) return;
+    game.active.emceePromise = this.generateEmcee(room, game.turnCounter);
+  }
+
+  private async generateEmcee(room: Room, turnId: number): Promise<void> {
+    const game = room.game;
+    if (game === null) return;
+    if (game.hostName === undefined) {
+      game.hostPromise ??= emceeService.chooseHost();
+      game.hostName = await game.hostPromise;
+    }
+    if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
+    const song = game.active.song;
+    const clip = await emceeService.revealClip(game.hostName, {
+      title: song.title,
+      artist: song.artist,
+      year: song.year,
+    });
+    if (game.active !== null && game.turnCounter === turnId) {
+      game.active.emceeClip = clip;
+    }
+  }
+
+  /** At reveal, push the pre-generated voice line to the hubs and let it finish before advancing. */
+  private async deliverEmcee(room: Room, turnId: number): Promise<void> {
+    const game = room.game;
+    if (game === null || game.active === null || game.turnCounter !== turnId) return;
+    if (game.active.emceeClip === null && game.active.emceePromise !== null) {
+      await Promise.race([game.active.emceePromise, delay(REVEAL_MS - 800)]);
+    }
+    if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "revealing") return;
+    const clip = game.active.emceeClip;
+    if (clip === null) return;
+
+    this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+    if (game.revealTimer !== null) clearTimeout(game.revealTimer);
+    game.revealTimer = setTimeout(() => {
+      game.revealTimer = null;
+      game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+      this.beginTurn(room);
+    }, Math.max(2500, clip.durationMs + 1800));
   }
 
   private beginTurn(room: Room): void {
@@ -486,10 +542,13 @@ export class RoomManager {
       phase: "placing",
       steal: null,
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
+      emceeClip: null,
+      emceePromise: null,
     };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
+    this.kickoffEmcee(room);
 
     if (placer.isBot) {
       const turnId = game.turnCounter;
@@ -631,4 +690,8 @@ function cardToView(card: PlacedCard): TimelineCardView {
     hasArt: card.hasArt,
     isSeed: card.isSeed,
   };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -34,6 +34,8 @@ export interface ServerToClientEvents {
   "room:error": (payload: { message: string }) => void;
   /** Hub-only: play a snippet by opaque song id (the hub is the sole audio source). */
   "audio:play": (payload: { songId: string; startS: number; lenS: number }) => void;
+  /** Hub-only: the emcee's voiced reveal line (audio + caption), emitted at reveal. */
+  "emcee:play": (payload: { audioUrl: string; hostName: string; text: string }) => void;
 }
 
 export interface ClientToServerEvents {

@@ -9,7 +9,8 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "scan": "tsx src/scripts/scan.ts"
+    "scan": "tsx src/scripts/scan.ts",
+    "emcee:smoke": "tsx src/scripts/emcee-smoke.ts"
   },
   "dependencies": {
     "@songster/shared": "workspace:*",

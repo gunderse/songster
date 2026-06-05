@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
 import { audioStreamUrl } from "../api";
-import { audioUnlocked, playSfx, playSnippet, stopSnippet, unlockAudio } from "../audio";
+import { audioUnlocked, playSfx, playSnippet, playVoiceUrl, stopSnippet, stopVoice, unlockAudio } from "../audio";
 import { HubGame } from "../components/HubGame";
 import { Roster } from "../components/Roster";
 import { socket } from "../socket";
@@ -14,6 +14,7 @@ export function Hub({ code }: { code: string }) {
   const [qr, setQr] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(audioUnlocked());
+  const [emcee, setEmcee] = useState<{ hostName: string; text: string } | null>(null);
 
   useEffect(() => {
     QRCode.toDataURL(joinUrl(code), { width: 360, margin: 1 }).then(setQr).catch(() => undefined);
@@ -22,19 +23,29 @@ export function Hub({ code }: { code: string }) {
       socket.emit("hub:join", { code }, (res) => setError(res.ok ? null : res.error));
     }
     function onAudio(payload: { songId: string; startS: number; lenS: number }) {
+      setEmcee(null);
+      stopVoice();
       playSfx("turn");
       playSnippet(audioStreamUrl(payload.songId), payload.startS, payload.lenS);
+    }
+    function onEmcee(payload: { audioUrl: string; hostName: string; text: string }) {
+      stopSnippet();
+      setEmcee({ hostName: payload.hostName, text: payload.text });
+      playVoiceUrl(payload.audioUrl);
     }
 
     socket.on("connect", register);
     socket.on("audio:play", onAudio);
+    socket.on("emcee:play", onEmcee);
     if (!socket.connected) socket.connect();
     else register();
 
     return () => {
       socket.off("connect", register);
       socket.off("audio:play", onAudio);
+      socket.off("emcee:play", onEmcee);
       stopSnippet();
+      stopVoice();
     };
   }, [code]);
 
@@ -120,7 +131,7 @@ export function Hub({ code }: { code: string }) {
               <span className="text-sm uppercase tracking-[0.3em]">Songster</span>
               <span className="font-mono text-lg tracking-widest text-slate-400">{code}</span>
             </div>
-            <HubGame room={room} />
+            <HubGame room={room} emcee={emcee} />
           </>
         )}
       </div>
