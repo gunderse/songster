@@ -1,0 +1,13 @@
+.conda-env/
+.pnpm-store/
+.conda-pkgs/
+.cache/
+node_modules/
+dist/
+.turbo/
+.DS_Store
+server/data/*.db
+server/data/*.db-*
+server/data/art/
+server/cache/
+server/cache/**
