@@ -1,0 +1,138 @@
+// Hub audio: song-snippet playback (with fades) + zero-asset synthesized SFX.
+// The hub is the sole audio source during gameplay.
+
+let ctx: AudioContext | null = null;
+let unlocked = false;
+let snippetEl: HTMLAudioElement | null = null;
+let snippetStopTimer: ReturnType<typeof setTimeout> | null = null;
+
+function getCtx(): AudioContext {
+  ctx ??= new AudioContext();
+  return ctx;
+}
+
+export function audioUnlocked(): boolean {
+  return unlocked;
+}
+
+/** Call from a user gesture (tap) to satisfy autoplay policies. */
+export function unlockAudio(): void {
+  unlocked = true;
+  const context = getCtx();
+  if (context.state !== "running") void context.resume();
+}
+
+function fade(el: HTMLAudioElement, from: number, to: number, ms: number): void {
+  const steps = 12;
+  let i = 0;
+  const id = setInterval(() => {
+    i += 1;
+    el.volume = Math.max(0, Math.min(1, from + (to - from) * (i / steps)));
+    if (i >= steps) clearInterval(id);
+  }, ms / steps);
+}
+
+export function playSnippet(url: string, startS: number, lenS: number): void {
+  stopSnippet();
+  if (!unlocked) return;
+  const el = new Audio();
+  el.src = url;
+  el.preload = "auto";
+  el.volume = 0;
+  snippetEl = el;
+
+  const onReady = () => {
+    try {
+      el.currentTime = startS;
+    } catch {
+      // seeking may be unsupported until more data loads; fall back to start
+    }
+    void el.play().catch(() => undefined);
+    fade(el, 0, 1, 400);
+    snippetStopTimer = setTimeout(
+      () => {
+        fade(el, el.volume, 0, 500);
+        setTimeout(stopSnippet, 520);
+      },
+      Math.max(800, lenS * 1000 - 500),
+    );
+  };
+  el.addEventListener("canplay", onReady, { once: true });
+  el.load();
+}
+
+export function stopSnippet(): void {
+  if (snippetStopTimer !== null) {
+    clearTimeout(snippetStopTimer);
+    snippetStopTimer = null;
+  }
+  if (snippetEl !== null) {
+    try {
+      snippetEl.pause();
+    } catch {
+      // ignore
+    }
+    snippetEl = null;
+  }
+}
+
+interface Tone {
+  f: number;
+  d: number;
+  g: number;
+  t?: OscillatorType;
+  o?: number;
+}
+
+const SFX = {
+  turn: [
+    { f: 784, d: 0.09, g: 0.05, o: 0 },
+    { f: 1046, d: 0.14, g: 0.05, o: 0.11 },
+  ],
+  reveal: [
+    { f: 262, d: 0.15, g: 0.06, o: 0 },
+    { f: 330, d: 0.16, g: 0.07, o: 0.1 },
+    { f: 523, d: 0.24, g: 0.08, o: 0.2 },
+  ],
+  correct: [
+    { f: 523, d: 0.12, g: 0.06, o: 0 },
+    { f: 659, d: 0.12, g: 0.06, o: 0.1 },
+    { f: 784, d: 0.22, g: 0.06, o: 0.2 },
+  ],
+  wrong: [
+    { f: 180, d: 0.18, g: 0.06, t: "sawtooth" as OscillatorType, o: 0 },
+    { f: 120, d: 0.26, g: 0.05, t: "sawtooth" as OscillatorType, o: 0.12 },
+  ],
+  win: [
+    { f: 392, d: 0.14, g: 0.07, o: 0 },
+    { f: 523, d: 0.14, g: 0.07, o: 0.14 },
+    { f: 659, d: 0.14, g: 0.07, o: 0.28 },
+    { f: 784, d: 0.32, g: 0.08, o: 0.42 },
+  ],
+} satisfies Record<string, Tone[]>;
+
+export type SfxName = keyof typeof SFX;
+
+export function playSfx(name: SfxName): void {
+  if (!unlocked) return;
+  const context = getCtx();
+  if (context.state !== "running") return;
+  const now = context.currentTime + 0.01;
+  for (const tone of SFX[name]) {
+    scheduleTone(context, now + (tone.o ?? 0), tone);
+  }
+}
+
+function scheduleTone(context: AudioContext, at: number, tone: Tone): void {
+  const osc = context.createOscillator();
+  const gain = context.createGain();
+  osc.type = tone.t ?? "sine";
+  osc.frequency.setValueAtTime(tone.f, at);
+  gain.gain.setValueAtTime(0.0001, at);
+  gain.gain.exponentialRampToValueAtTime(tone.g, at + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + tone.d);
+  osc.connect(gain);
+  gain.connect(context.destination);
+  osc.start(at);
+  osc.stop(at + tone.d + 0.02);
+}

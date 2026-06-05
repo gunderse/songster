@@ -7,6 +7,7 @@ import {
   type ServerToClientEvents,
   type SocketData,
 } from "@songster/shared/events";
+import { placeCardSchema } from "@songster/shared/game";
 import { createRoomSchema, joinRoomSchema, roomCodeSchema, setTeamSchema } from "@songster/shared/room";
 
 import { logger } from "./logger.js";
@@ -16,11 +17,6 @@ type AppServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerE
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
 export function registerSockets(io: AppServer, manager: RoomManager): void {
-  function broadcast(code: string): void {
-    const room = manager.getRoom(code);
-    if (room !== undefined) io.to(code).emit("room:state", manager.stateView(room));
-  }
-
   io.on("connection", (socket: AppSocket) => {
     logger.info({ socketId: socket.id }, "client connected");
     socket.emit("hello", { message: "songster-online", serverNow: Date.now() });
@@ -42,7 +38,7 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       void socket.join(room.code);
       logger.info({ code: room.code, config: room.config }, "room created");
       ack({ ok: true, code: room.code });
-      broadcast(room.code);
+      manager.broadcast(room.code);
     });
 
     socket.on("room:join", (payload, ack) => {
@@ -62,24 +58,27 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       void socket.join(result.room.code);
       logger.info({ code: result.room.code, player: result.player.name }, "player joined");
       ack({ ok: true, playerId: result.player.id, teamId: result.player.teamId ?? "" });
-      broadcast(result.room.code);
+      manager.broadcast(result.room.code);
     });
 
     socket.on("room:setTeam", (payload) => {
       const parsed = setTeamSchema.safeParse(payload);
       if (!parsed.success) return;
       const room = manager.setTeam(socket.id, parsed.data.teamId);
-      if (room !== undefined) broadcast(room.code);
+      if (room !== undefined) manager.broadcast(room.code);
     });
 
     socket.on("room:start", (payload) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) return;
-      const room = manager.start(parsed.data.code);
-      if (room !== undefined) {
-        logger.info({ code: room.code }, "game started");
-        broadcast(room.code);
-      }
+      const room = manager.startGame(parsed.data.code);
+      if (room !== undefined) logger.info({ code: room.code }, "game started");
+    });
+
+    socket.on("player:placeCard", (payload) => {
+      const parsed = placeCardSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.placeCard(socket.id, parsed.data.index);
     });
 
     socket.on("hub:join", (payload, ack) => {
@@ -103,7 +102,7 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
     socket.on("disconnect", (reason) => {
       logger.info({ socketId: socket.id, reason }, "client disconnected");
       const room = manager.handleDisconnect(socket.id);
-      if (room !== undefined) broadcast(room.code);
+      if (room !== undefined) manager.broadcast(room.code);
     });
   });
 }

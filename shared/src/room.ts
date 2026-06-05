@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-/** Room / lobby / team contract (M3). Spoiler-safe: no song data appears here. */
+import type { GameView } from "./game.js";
+
+/** Room / lobby / team contract (M3+). Spoiler-safe: no unrevealed song data appears here. */
 
 export const roomStatusSchema = z.enum(["lobby", "playing", "finished"]);
 export type RoomStatus = z.infer<typeof roomStatusSchema>;
@@ -43,6 +45,8 @@ export interface RoomState {
   players: PlayerView[];
   /** Approved songs matching the deck filter — so the admin knows it's playable. */
   poolSize: number;
+  /** Present once the game is running (null in the lobby). */
+  game: GameView | null;
 }
 
 // ── socket payloads ──────────────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { socket } from "../socket";
 import { useRoomState } from "../useRoom";
+import { Play } from "./Play";
 
 export function Join({ code }: { code: string }) {
   const room = useRoomState();
@@ -63,18 +64,7 @@ export function Join({ code }: { code: string }) {
   const myTeam = room?.teams.find((team) => team.id === me?.teamId) ?? null;
 
   if (room !== null && room.status !== "lobby") {
-    return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-slate-100">
-        <div className="text-6xl">🎶</div>
-        <h1 className="text-3xl font-black">The show is starting!</h1>
-        {myTeam !== null && (
-          <p className="text-lg" style={{ color: myTeam.color }}>
-            You're on {myTeam.name}
-          </p>
-        )}
-        <p className="text-sm text-slate-500">Watch the big screen. (Gameplay arrives in M4.)</p>
-      </main>
-    );
+    return <Play room={room} playerId={playerId} />;
   }
 
   return (

@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./events": "./src/events.ts",
+    "./game": "./src/game.ts",
     "./library": "./src/library.ts",
     "./room": "./src/room.ts"
   },

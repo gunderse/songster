@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import type DatabaseType from "better-sqlite3";
 
-import type { DeckFilter, PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
+import type { ActiveTurnView, GameView, TimelineCardView, TurnResultView } from "@songster/shared/game";
+import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
+
+import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
+import { countAvailable, sampleOne, sampleSongs, type SampledSong } from "./sampling.js";
 
 const TEAM_PRESETS: Array<{ name: string; color: string }> = [
   { name: "Red", color: "#ef4444" },
@@ -13,6 +17,9 @@ const TEAM_PRESETS: Array<{ name: string; color: string }> = [
 
 // Unambiguous alphabet (no 0/O/1/I) for human-typeable room codes.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/** How long the reveal stays up before the next turn begins. */
+const REVEAL_MS = 5000;
 
 interface Player {
   id: string;
@@ -29,6 +36,30 @@ interface Team {
   color: string;
 }
 
+interface GameTeam {
+  teamId: string;
+  timeline: PlacedCard[];
+  placerIndex: number;
+}
+
+interface ActiveTurn {
+  song: SampledSong;
+  teamId: string;
+  placerId: string;
+  phase: "placing" | "revealing";
+}
+
+interface Game {
+  target: number;
+  teams: GameTeam[];
+  used: Set<string>;
+  turnIndex: number;
+  active: ActiveTurn | null;
+  lastResult: TurnResultView | null;
+  winnerTeamId: string | null;
+  revealTimer: ReturnType<typeof setTimeout> | null;
+}
+
 interface Room {
   code: string;
   status: RoomStatus;
@@ -36,19 +67,30 @@ interface Room {
   teams: Team[];
   players: Map<string, Player>;
   hubSockets: Set<string>;
+  game: Game | null;
   createdAt: number;
 }
 
 export type JoinResult = { ok: true; room: Room; player: Player } | { ok: false; error: string };
 
+export interface RoomHooks {
+  broadcast(code: string): void;
+  playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
+}
+
 /**
- * In-memory room/team/player state — the server is the source of truth for the
- * session. (Persistence across restarts is an M9 hardening item.)
+ * In-memory room/team/player/game state — the server is the source of truth for
+ * the session. (Persistence across restarts is an M9 hardening item.)
  */
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
 
-  constructor(private readonly db: DatabaseType.Database) {}
+  constructor(
+    private readonly db: DatabaseType.Database,
+    private readonly hooks: RoomHooks,
+  ) {}
+
+  // ── lobby ──────────────────────────────────────────────────────────────
 
   createRoom(config: RoomConfig): Room {
     const code = this.generateCode();
@@ -64,6 +106,7 @@ export class RoomManager {
       teams,
       players: new Map(),
       hubSockets: new Set(),
+      game: null,
       createdAt: Date.now(),
     };
     this.rooms.set(code, room);
@@ -72,6 +115,14 @@ export class RoomManager {
 
   getRoom(code: string): Room | undefined {
     return this.rooms.get(code.toUpperCase());
+  }
+
+  hubSocketIds(code: string): string[] {
+    return [...(this.getRoom(code)?.hubSockets ?? [])];
+  }
+
+  broadcast(code: string): void {
+    this.hooks.broadcast(code);
   }
 
   join(code: string, socketId: string, name: string): JoinResult {
@@ -85,7 +136,6 @@ export class RoomManager {
     const existing = [...room.players.values()].find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
     if (existing !== undefined) {
       if (existing.connected) return { ok: false, error: "That name is already taken in this room." };
-      // Reconnect under the same name.
       existing.connected = true;
       existing.socketId = socketId;
       return { ok: true, room, player: existing };
@@ -109,14 +159,6 @@ export class RoomManager {
     const { room, player } = found;
     if (room.status === "lobby" && room.teams.some((t) => t.id === teamId)) {
       player.teamId = teamId;
-    }
-    return room;
-  }
-
-  start(code: string): Room | undefined {
-    const room = this.getRoom(code);
-    if (room !== undefined && room.status === "lobby") {
-      room.status = "playing";
     }
     return room;
   }
@@ -150,6 +192,148 @@ export class RoomManager {
     return touched;
   }
 
+  // ── game ───────────────────────────────────────────────────────────────
+
+  startGame(code: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined || room.status !== "lobby") return room;
+
+    const seeds = sampleSongs(this.db, room.config.deck, room.teams.length, []);
+    const used = new Set<string>();
+    const teams: GameTeam[] = room.teams.map((team, i) => {
+      const seed = seeds[i];
+      const timeline: PlacedCard[] = [];
+      if (seed !== undefined) {
+        used.add(seed.songId);
+        timeline.push(sampledToCard(seed, true));
+      }
+      return { teamId: team.id, timeline, placerIndex: 0 };
+    });
+
+    room.game = {
+      target: room.config.targetLength,
+      teams,
+      used,
+      turnIndex: 0,
+      active: null,
+      lastResult: null,
+      winnerTeamId: null,
+      revealTimer: null,
+    };
+    room.status = "playing";
+    this.beginTurn(room);
+    return room;
+  }
+
+  placeCard(socketId: string, index: number): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game.active.placerId !== player.id) return room;
+
+    const team = game.teams.find((t) => t.teamId === game.active!.teamId);
+    if (team === undefined) return room;
+
+    const slot = Math.max(0, Math.min(index, team.timeline.length));
+    const song = game.active.song;
+    const correct = isCorrectPlacement(team.timeline, slot, song.year);
+    if (correct) {
+      team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
+    }
+
+    game.lastResult = {
+      teamId: team.teamId,
+      placerId: player.id,
+      placerName: player.name,
+      correct,
+      placedIndex: slot,
+      song: { songId: song.songId, year: song.year, title: song.title, artist: song.artist, hasArt: song.hasArt },
+    };
+    game.active.phase = "revealing";
+    this.hooks.broadcast(room.code);
+
+    if (correct && hasWon(team.timeline.length, game.target)) {
+      game.winnerTeamId = team.teamId;
+      this.finishGame(room);
+      return room;
+    }
+
+    game.revealTimer = setTimeout(() => {
+      game.revealTimer = null;
+      game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+      this.beginTurn(room);
+    }, REVEAL_MS);
+    return room;
+  }
+
+  private beginTurn(room: Room): void {
+    const game = room.game;
+    if (game === null) return;
+
+    // Find the next team (from turnIndex) that has a connected player.
+    let attempts = 0;
+    let team = game.teams[game.turnIndex % game.teams.length]!;
+    let placer = this.pickPlacer(room, team);
+    while (placer === null && attempts < game.teams.length) {
+      game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+      team = game.teams[game.turnIndex % game.teams.length]!;
+      placer = this.pickPlacer(room, team);
+      attempts += 1;
+    }
+    if (placer === null) {
+      // No connected players anywhere — pause until someone (re)joins.
+      game.active = null;
+      this.hooks.broadcast(room.code);
+      return;
+    }
+
+    const song = sampleOne(this.db, room.config.deck, [...game.used]);
+    if (song === null) {
+      this.finishGame(room);
+      return;
+    }
+
+    team.placerIndex += 1;
+    game.used.add(song.songId);
+    game.active = { song, teamId: team.teamId, placerId: placer.id, phase: "placing" };
+    game.lastResult = null;
+    this.hooks.broadcast(room.code);
+    this.hooks.playAudioToHubs(room.code, {
+      songId: song.songId,
+      startS: song.snippetStartS,
+      lenS: song.snippetLenS ?? room.config.snippetLenS,
+    });
+  }
+
+  private finishGame(room: Room): void {
+    const game = room.game;
+    if (game !== null) {
+      if (game.revealTimer !== null) {
+        clearTimeout(game.revealTimer);
+        game.revealTimer = null;
+      }
+      if (game.winnerTeamId === null) {
+        const leader = [...game.teams].sort((a, b) => b.timeline.length - a.timeline.length)[0];
+        game.winnerTeamId = leader?.teamId ?? null;
+      }
+      game.active = null;
+    }
+    room.status = "finished";
+    this.hooks.broadcast(room.code);
+  }
+
+  private pickPlacer(room: Room, team: GameTeam): Player | null {
+    const members = [...room.players.values()]
+      .filter((p) => p.teamId === team.teamId && p.connected)
+      .sort((a, b) => a.joinedAt - b.joinedAt);
+    if (members.length === 0) return null;
+    return members[team.placerIndex % members.length]!;
+  }
+
+  // ── views ──────────────────────────────────────────────────────────────
+
   stateView(room: Room): RoomState {
     const teams: TeamView[] = room.teams.map((team) => ({
       id: team.id,
@@ -166,9 +350,37 @@ export class RoomManager {
       config: room.config,
       teams,
       players,
-      poolSize: countApprovedSongs(this.db, room.config.deck),
+      poolSize: countAvailable(this.db, room.config.deck, []),
+      game: this.gameView(room),
     };
   }
+
+  private gameView(room: Room): GameView | null {
+    const game = room.game;
+    if (game === null) return null;
+
+    const active: ActiveTurnView | null =
+      game.active === null
+        ? null
+        : {
+            teamId: game.active.teamId,
+            placerId: game.active.placerId,
+            placerName: room.players.get(game.active.placerId)?.name ?? "—",
+            phase: game.active.phase,
+            snippetLenS: game.active.song.snippetLenS ?? room.config.snippetLenS,
+          };
+
+    return {
+      target: game.target,
+      timelines: game.teams.map((team) => ({ teamId: team.teamId, cards: team.timeline.map(cardToView) })),
+      activeTurn: active,
+      lastResult: game.lastResult,
+      winnerTeamId: game.winnerTeamId,
+      remaining: Math.max(0, countAvailable(this.db, room.config.deck, []) - game.used.size),
+    };
+  }
+
+  // ── helpers ──────────────────────────────────────────────────────────────
 
   private smallestTeam(room: Room): string {
     const counts = new Map(room.teams.map((t) => [t.id, 0]));
@@ -199,22 +411,24 @@ export class RoomManager {
   }
 }
 
-/** Count approved songs matching the deck filter (genres/tags are any-match). */
-function countApprovedSongs(db: DatabaseType.Database, deck: DeckFilter): number {
-  const where = ["status = 'approved'"];
-  const params: Record<string, string> = {};
+function sampledToCard(song: SampledSong, isSeed: boolean): PlacedCard {
+  return {
+    songId: song.songId,
+    year: song.year,
+    title: song.title,
+    artist: song.artist,
+    hasArt: song.hasArt,
+    isSeed,
+  };
+}
 
-  if (deck.genres !== undefined && deck.genres.length > 0) {
-    const keys = deck.genres.map((_, i) => `@g${i}`);
-    where.push(`id IN (SELECT song_id FROM song_genres WHERE genre IN (${keys.join(",")}))`);
-    deck.genres.forEach((genre, i) => (params[`g${i}`] = genre));
-  }
-  if (deck.tags !== undefined && deck.tags.length > 0) {
-    const keys = deck.tags.map((_, i) => `@t${i}`);
-    where.push(`id IN (SELECT song_id FROM song_tags WHERE tag IN (${keys.join(",")}))`);
-    deck.tags.forEach((tag, i) => (params[`t${i}`] = tag));
-  }
-
-  const row = db.prepare(`SELECT COUNT(*) AS c FROM songs WHERE ${where.join(" AND ")}`).get(params) as { c: number };
-  return row.c;
+function cardToView(card: PlacedCard): TimelineCardView {
+  return {
+    songId: card.songId,
+    year: card.year,
+    title: card.title,
+    artist: card.artist,
+    hasArt: card.hasArt,
+    isSeed: card.isSeed,
+  };
 }

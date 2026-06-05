@@ -32,6 +32,8 @@ export interface ServerToClientEvents {
   pong: (payload: Pong) => void;
   "room:state": (state: RoomState) => void;
   "room:error": (payload: { message: string }) => void;
+  /** Hub-only: play a snippet by opaque song id (the hub is the sole audio source). */
+  "audio:play": (payload: { songId: string; startS: number; lenS: number }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -41,6 +43,7 @@ export interface ClientToServerEvents {
   "room:setTeam": (payload: { teamId: string }) => void;
   "room:start": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
+  "player:placeCard": (payload: { index: number }) => void;
 }
 
 export type InterServerEvents = Record<string, never>;
