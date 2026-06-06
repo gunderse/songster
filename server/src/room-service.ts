@@ -16,7 +16,7 @@ import { emceeService, type EmceeClip, type EmceeContext } from "./ai/emcee-serv
 import { logger } from "./logger.js";
 import { showcaseService, type ShowcaseReason } from "./ai/showcase-service.js";
 import { showcaseEveryN } from "./config.js";
-import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
+import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, scoreOf, type PlacedCard } from "./game.js";
 import { countAvailable, sampleOne, sampleSongs, type SampledSong } from "./sampling.js";
 
 const TEAM_PRESETS: Array<{ name: string; color: string }> = [
@@ -39,8 +39,16 @@ const POST_REVEAL_MIN_MS = 4500;
 const SHOWCASE_FLOOR_MS = 11000;
 /** Minimum "drumroll" before the result is shown, even when commentary is fast/cached. */
 const SUSPENSE_FLOOR_MS = 2200;
-/** Hard cap on the drumroll — if the voice never arrives, reveal anyway with SFX. */
-const SUSPENSE_MAX_MS = 9000;
+/**
+ * Hard cap on the drumroll. The Voice API serializes via gpu-lock and a single
+ * line can take 15-25s end-to-end (Ollama 5-15s + voice synthesis 10-20s) — so
+ * a tight ceiling was dropping perfectly-good lines on the floor. We reveal at
+ * the cap regardless, then play the line late if it arrives within
+ * LATE_EMCEE_WINDOW_MS (extending the turn so the host always gets heard).
+ */
+const SUSPENSE_MAX_MS = 20_000;
+/** After the reveal flips, how much longer we'll wait for a late-arriving voice. */
+const LATE_EMCEE_WINDOW_MS = 30_000;
 /** Pre-game countdown — gives late joiners a grace period before turn 1. */
 const COUNTDOWN_MS = 6000;
 
@@ -563,7 +571,7 @@ export class RoomManager {
       if (stealCorrect && stealerTeam !== undefined) {
         stealerTeam.timeline = insertCardAt(stealerTeam.timeline, steal.index, sampledToCard(song, false));
         game.active.hiddenSongIds.add(song.songId);
-        if (hasWon(stealerTeam.timeline.length, game.target)) stealWonTeamId = stealerTeam.teamId;
+        if (hasWon(scoreOf(stealerTeam.timeline), game.target)) stealWonTeamId = stealerTeam.teamId;
       }
       // Always record the stealer's slot so a "?" tile shows there too.
       game.active.pendingStealPlacement = { teamId: steal.teamId, index: steal.index };
@@ -593,7 +601,7 @@ export class RoomManager {
     this.hooks.broadcast(room.code);
 
     const revealedSong = { title: song.title, artist: song.artist, year: song.year };
-    const placerWon = correct && hasWon(team.timeline.length, game.target);
+    const placerWon = correct && hasWon(scoreOf(team.timeline), game.target);
 
     // Track the lead (for "lead change" showcases).
     const newLeader = this.uniqueLeader(game);
@@ -720,7 +728,7 @@ export class RoomManager {
   private describeSituation(room: Room, game: Game): string {
     const standings = game.teams.map((t) => ({
       name: room.teams.find((rt) => rt.id === t.teamId)?.name ?? "?",
-      count: t.timeline.length,
+      count: scoreOf(t.timeline),
       streak: t.streak,
       teamId: t.teamId,
     }));
@@ -772,17 +780,36 @@ export class RoomManager {
     if (clip !== null) {
       // ALWAYS push the caption + (optional) audio. The Voice API may have failed
       // — text-only is still shown so the host always has something to say.
-      this.hooks.emceeToHubs(room.code, {
-        audioUrl: clip.audioUrl,
-        hostName: clip.hostName,
-        text: clip.text,
-      });
+      this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
       game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
-    } else {
-      // Even the script failed — SFX + on-screen verdict carry it.
-      logger.warn({ code: room.code, turnId }, "emcee: no clip and no script — reveal goes silent");
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
+      return;
     }
+
+    // No clip yet — hit the suspense ceiling. Reveal anyway with a base timer,
+    // but KEEP waiting for the line. If it arrives within LATE_EMCEE_WINDOW_MS,
+    // push it and extend the turn to fit. The voice never gets dropped on the floor.
+    logger.info({ code: room.code, turnId }, "emcee: suspense ceiling hit; waiting for late voice");
+    const baseTimerStart = Date.now();
+    game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
+
+    const pending = game.active.emceePromise;
+    if (pending === null) return;
+    void (async () => {
+      try {
+        await Promise.race([pending, delay(LATE_EMCEE_WINDOW_MS)]);
+      } catch {
+        /* generateEmcee handles its own errors */
+      }
+      if (room.game === null || room.game.active === null || room.game.turnCounter !== turnId) return;
+      if (room.game.active.phase !== "revealing") return;
+      const late = room.game.active.emceeClip;
+      if (late === null) return;
+      this.hooks.emceeToHubs(room.code, { audioUrl: late.audioUrl, hostName: late.hostName, text: late.text });
+      logger.info({ code: room.code, turnId, delayMs: Date.now() - baseTimerStart }, "emcee: late voice delivered");
+      // Extend the timer so the late voice gets to finish.
+      if (room.game.revealTimer !== null) clearTimeout(room.game.revealTimer);
+      room.game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800));
+    })();
   }
 
   /**
@@ -845,11 +872,11 @@ export class RoomManager {
   }
 
   private uniqueLeader(game: Game): string | null {
-    const sorted = [...game.teams].sort((a, b) => b.timeline.length - a.timeline.length);
+    const sorted = [...game.teams].sort((a, b) => scoreOf(b.timeline) - scoreOf(a.timeline));
     const top = sorted[0];
     if (top === undefined) return null;
     const second = sorted[1];
-    if (second !== undefined && second.timeline.length === top.timeline.length) return null;
+    if (second !== undefined && scoreOf(second.timeline) === scoreOf(top.timeline)) return null;
     return top.teamId;
   }
 
@@ -929,7 +956,7 @@ export class RoomManager {
       }
       game.countdownEndsAt = null;
       if (game.winnerTeamId === null) {
-        const leader = [...game.teams].sort((a, b) => b.timeline.length - a.timeline.length)[0];
+        const leader = [...game.teams].sort((a, b) => scoreOf(b.timeline) - scoreOf(a.timeline))[0];
         game.winnerTeamId = leader?.teamId ?? null;
       }
       game.active = null;

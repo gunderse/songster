@@ -28,8 +28,17 @@ export function insertCardAt(timeline: ReadonlyArray<PlacedCard>, index: number,
   return next;
 }
 
-export function hasWon(timelineLength: number, target: number): boolean {
-  return timelineLength >= target;
+/**
+ * A team's score = correctly-placed cards.
+ * The seed card every team starts with is a reference point, not a point earned —
+ * so it doesn't count toward the win target or the scoreboard.
+ */
+export function scoreOf(timeline: ReadonlyArray<PlacedCard>): number {
+  return timeline.reduce((n, card) => n + (card.isSeed ? 0 : 1), 0);
+}
+
+export function hasWon(score: number, target: number): boolean {
+  return score >= target;
 }
 
 /** Round-robin next index over `length` items, given the current index. */

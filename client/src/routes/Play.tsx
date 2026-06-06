@@ -413,7 +413,7 @@ function Scoreboard({ room }: { room: RoomState }) {
   return (
     <div className="mt-1 space-y-1.5">
       {room.teams.map((team) => {
-        const len = game.timelines.find((t) => t.teamId === team.id)?.cards.length ?? 0;
+        const len = game.timelines.find((t) => t.teamId === team.id)?.cards.filter((c) => !c.isSeed).length ?? 0;
         return (
           <div key={team.id} className="flex items-center gap-2 text-sm">
             <span className="w-12 font-semibold" style={{ color: team.color }}>

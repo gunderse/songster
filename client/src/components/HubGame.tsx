@@ -225,7 +225,7 @@ function Scoreboard({ room }: { room: RoomState }) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-2">
       {room.teams.map((team) => {
-        const len = game.timelines.find((t) => t.teamId === team.id)?.cards.length ?? 0;
+        const len = game.timelines.find((t) => t.teamId === team.id)?.cards.filter((c) => !c.isSeed).length ?? 0;
         return (
           <div key={team.id} className="flex items-center gap-3">
             <span className="w-16 text-right font-bold" style={{ color: team.color }}>
