@@ -21,7 +21,8 @@ export interface EmceeContext {
 }
 
 export interface EmceeClip {
-  audioUrl: string;
+  /** null when the Voice API failed — caption is still shown so the host always speaks. */
+  audioUrl: string | null;
   durationMs: number;
   text: string;
   hostName: string;
@@ -91,7 +92,12 @@ export class EmceeService {
         logger.warn({ error: getErrorMessage(error), hostName, attempt }, "emcee voice generation failed");
       }
     }
-    return null;
+    // Voice failed but we still have the line — return text-only so the
+    // caption shows on the hub. Pace the reveal to roughly how long the
+    // line would have taken to read aloud (~2.4 words/sec).
+    const wordCount = text.split(/\s+/u).filter(Boolean).length;
+    const estDurationMs = Math.max(2200, Math.min(9000, wordCount * 420 + 600));
+    return { audioUrl: null, durationMs: estDurationMs, text, hostName };
   }
 
   private async generateLine(hostName: string, context: EmceeContext): Promise<string> {

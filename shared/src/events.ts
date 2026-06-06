@@ -35,8 +35,12 @@ export interface ServerToClientEvents {
   "room:error": (payload: { message: string }) => void;
   /** Hub-only: play a snippet by opaque song id (the hub is the sole audio source). */
   "audio:play": (payload: { songId: string; startS: number; lenS: number }) => void;
-  /** Hub-only: the emcee's voiced reveal line (audio + caption), emitted at reveal. */
-  "emcee:play": (payload: { audioUrl: string; hostName: string; text: string }) => void;
+  /**
+   * Hub-only: the emcee's reveal line.
+   * `audioUrl` is null when the Voice API failed but the Ollama line still came
+   * through — caption-only is still shown so the host always has something to say.
+   */
+  "emcee:play": (payload: { audioUrl: string | null; hostName: string; text: string }) => void;
   /** Hub-only: a full themed showcase segment at a peak moment. */
   "showcase:play": (payload: ShowcaseView) => void;
 }

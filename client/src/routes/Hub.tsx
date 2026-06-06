@@ -67,14 +67,16 @@ export function Hub({ code }: { code: string }) {
       playSnippet(url, payload.startS, payload.lenS);
       setAudioFor(payload.lenS * 1000);
     }
-    function onEmcee(payload: { audioUrl: string; hostName: string; text: string }) {
+    function onEmcee(payload: { audioUrl: string | null; hostName: string; text: string }) {
       // Fade the song out, then let the host speak after a beat (not an abrupt cut).
+      // audioUrl null = caption-only fallback (Voice API failed); still show the line.
       fadeOutSnippet(1600);
       setEmcee({ hostName: payload.hostName, text: payload.text });
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
-      voiceTimerRef.current = window.setTimeout(() => playVoiceUrl(payload.audioUrl), 1400);
-      // Reasonable upper bound; cleared on next audio/showcase.
-      setAudioFor(25_000);
+      if (payload.audioUrl !== null) {
+        voiceTimerRef.current = window.setTimeout(() => playVoiceUrl(payload.audioUrl), 1400);
+        setAudioFor(25_000);
+      }
     }
     function onShowcase(view: ShowcaseView) {
       fadeOutSnippet(900);

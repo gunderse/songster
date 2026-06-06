@@ -13,6 +13,7 @@ import type {
 import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
 
 import { emceeService, type EmceeClip, type EmceeContext } from "./ai/emcee-service.js";
+import { logger } from "./logger.js";
 import { showcaseService, type ShowcaseReason } from "./ai/showcase-service.js";
 import { showcaseEveryN } from "./config.js";
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
@@ -85,6 +86,16 @@ interface ActiveTurn {
   /** Auto-resolve timer for the placer's clock; null if disabled. */
   placeDeadline: number | null;
   placeTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * During "suspense" only: hide cards (by songId) that were just inserted this
+   * turn so the placer's correct guess doesn't appear in the team timeline before
+   * the year is revealed. Cleared at reveal.
+   */
+  hiddenSongIds: Set<string>;
+  /** The placer's chosen slot on their team's timeline (where a "?" tile goes). */
+  pendingPlacement: { teamId: string; index: number } | null;
+  /** The stealer's chosen slot on their own team's timeline (if a steal was queued). */
+  pendingStealPlacement: { teamId: string; index: number } | null;
   /** Track how far we've already played into the song for "Play More" continuations. */
   playedThroughS: number;
   /** Teammate suggestions for the placer (M8). */
@@ -133,7 +144,7 @@ export type JoinResult = { ok: true; room: Room; player: Player } | { ok: false;
 export interface RoomHooks {
   broadcast(code: string): void;
   playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
-  emceeToHubs(code: string, payload: { audioUrl: string; hostName: string; text: string }): void;
+  emceeToHubs(code: string, payload: { audioUrl: string | null; hostName: string; text: string }): void;
   showcaseToHubs(code: string, payload: ShowcaseView): void;
 }
 
@@ -432,6 +443,9 @@ export class RoomManager {
       pendingResult: null,
       placeDeadline: null,
       placeTimer: null,
+      hiddenSongIds: new Set(),
+      pendingPlacement: null,
+      pendingStealPlacement: null,
     };
     game.lastResult = null;
     this.armPlaceTimer(room);
@@ -529,7 +543,12 @@ export class RoomManager {
     const correct = isCorrectPlacement(team.timeline, slot, song.year);
     if (correct) {
       team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
+      // Hide the just-placed card during suspense so the year doesn't leak.
+      game.active.hiddenSongIds.add(song.songId);
     }
+    // Always record the placer's chosen slot so the hub renders "?" there
+    // during the drumroll (works for both correct and wrong guesses).
+    game.active.pendingPlacement = { teamId: team.teamId, index: slot };
     team.streak = correct ? team.streak + 1 : 0;
 
     // Resolve a Steal: an opponent wins the card only if the placer was WRONG
@@ -543,8 +562,11 @@ export class RoomManager {
         !correct && stealerTeam !== undefined && isCorrectPlacement(stealerTeam.timeline, steal.index, song.year);
       if (stealCorrect && stealerTeam !== undefined) {
         stealerTeam.timeline = insertCardAt(stealerTeam.timeline, steal.index, sampledToCard(song, false));
+        game.active.hiddenSongIds.add(song.songId);
         if (hasWon(stealerTeam.timeline.length, game.target)) stealWonTeamId = stealerTeam.teamId;
       }
+      // Always record the stealer's slot so a "?" tile shows there too.
+      game.active.pendingStealPlacement = { teamId: steal.teamId, index: steal.index };
       stealResult = {
         teamId: steal.teamId,
         playerName: room.players.get(steal.playerId)?.name ?? "—",
@@ -630,6 +652,10 @@ export class RoomManager {
     game.lastResult = game.active.pendingResult;
     game.active.phase = "revealing";
     game.active.commentaryPending = false;
+    // Drop the spoiler veil: real timeline cards re-appear; placeholder slots disappear.
+    game.active.hiddenSongIds.clear();
+    game.active.pendingPlacement = null;
+    game.active.pendingStealPlacement = null;
     this.hooks.broadcast(room.code);
     return true;
   }
@@ -744,10 +770,17 @@ export class RoomManager {
 
     if (game.revealTimer !== null) clearTimeout(game.revealTimer);
     if (clip !== null) {
-      this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+      // ALWAYS push the caption + (optional) audio. The Voice API may have failed
+      // — text-only is still shown so the host always has something to say.
+      this.hooks.emceeToHubs(room.code, {
+        audioUrl: clip.audioUrl,
+        hostName: clip.hostName,
+        text: clip.text,
+      });
       game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
     } else {
-      // No voice (services down or too slow) — the SFX + on-screen verdict carry it.
+      // Even the script failed — SFX + on-screen verdict carry it.
+      logger.warn({ code: room.code, turnId }, "emcee: no clip and no script — reveal goes silent");
       game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
     }
   }
@@ -866,6 +899,9 @@ export class RoomManager {
       pendingResult: null,
       placeDeadline: null,
       placeTimer: null,
+      hiddenSongIds: new Set(),
+      pendingPlacement: null,
+      pendingStealPlacement: null,
     };
     game.lastResult = null;
     this.armPlaceTimer(room);
@@ -962,11 +998,20 @@ export class RoomManager {
               index: s.index,
             })),
             placeDeadline: game.active.placeDeadline,
+            pendingPlacement: game.active.pendingPlacement,
+            pendingStealPlacement: game.active.pendingStealPlacement,
           };
 
+    // During suspense, hide cards just inserted this turn so a correct guess
+    // doesn't leak the year — the placer's chosen slot is rendered as a "?"
+    // placeholder client-side via ActiveTurnView.pendingPlacement.
+    const hide = game.active?.hiddenSongIds ?? new Set<string>();
     return {
       target: game.target,
-      timelines: game.teams.map((team) => ({ teamId: team.teamId, cards: team.timeline.map(cardToView) })),
+      timelines: game.teams.map((team) => ({
+        teamId: team.teamId,
+        cards: team.timeline.filter((c) => !hide.has(c.songId)).map(cardToView),
+      })),
       activeTurn: active,
       lastResult: game.lastResult,
       winnerTeamId: game.winnerTeamId,

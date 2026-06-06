@@ -113,10 +113,10 @@ export function fadeOutSnippet(ms = 1600): void {
 
 let voiceEl: HTMLAudioElement | null = null;
 
-/** Play a generated emcee voice clip (separate from the song snippet). */
-export function playVoiceUrl(url: string): void {
+/** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */
+export function playVoiceUrl(url: string | null): void {
   stopVoice();
-  if (!unlocked) return;
+  if (url === null || !unlocked) return;
   const el = new Audio(url);
   el.volume = 1;
   voiceEl = el;

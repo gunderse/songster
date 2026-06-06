@@ -1,8 +1,23 @@
 import { AnimatePresence, motion } from "framer-motion";
 
+import type { TimelineCardView } from "@songster/shared/game";
 import type { RoomState } from "@songster/shared/room";
 
 import { artUrl } from "../api";
+
+/** Splice in a "placeholder" sentinel at the guessed slot during the suspense. */
+function timelineWithPlaceholder(
+  cards: TimelineCardView[],
+  placeholderIndex: number | null,
+): Array<TimelineCardView | "placeholder"> {
+  if (placeholderIndex === null) return [...cards];
+  const out: Array<TimelineCardView | "placeholder"> = [];
+  for (let i = 0; i <= cards.length; i += 1) {
+    if (i === placeholderIndex) out.push("placeholder");
+    if (i < cards.length) out.push(cards[i]!);
+  }
+  return out;
+}
 
 export function HubGame({
   room,
@@ -167,18 +182,35 @@ export function HubGame({
         </motion.div>
       ) : null}
 
-      {/* Active team's timeline */}
+      {/* Active team's timeline (with a "?" placeholder at the guessed slot during suspense). */}
       <div>
         <div className="mb-2 text-center text-sm text-slate-500" style={{ color: activeTeam?.color }}>
           {activeTeam?.name}'s timeline
         </div>
         <div className="flex flex-wrap justify-center gap-2">
-          {activeCards.map((card) => (
-            <div key={card.songId} className="flex w-24 flex-col items-center rounded-lg border border-slate-700 bg-slate-800 p-2 text-center" style={{ borderTopColor: activeTeam?.color, borderTopWidth: 3 }}>
-              <div className="text-2xl font-black tabular-nums">{card.year}</div>
-              <div className="line-clamp-2 text-[11px] leading-tight text-slate-400">{card.title ?? ""}</div>
-            </div>
-          ))}
+          {timelineWithPlaceholder(activeCards, suspense ? active.pendingPlacement?.index ?? null : null).map((entry, i) =>
+            entry === "placeholder" ? (
+              <motion.div
+                key={`ph-${i}`}
+                animate={{ scale: [1, 1.06, 1] }}
+                transition={{ duration: 0.7, repeat: Infinity }}
+                className="flex w-24 flex-col items-center rounded-lg border-2 border-dashed border-amber-400 bg-slate-900 p-2 text-center"
+                style={{ borderTopColor: activeTeam?.color, borderTopWidth: 3 }}
+              >
+                <div className="text-2xl font-black text-amber-300">?</div>
+                <div className="line-clamp-2 text-[11px] leading-tight text-amber-300/80">{active.placerName}'s guess</div>
+              </motion.div>
+            ) : (
+              <div
+                key={entry.songId}
+                className="flex w-24 flex-col items-center rounded-lg border border-slate-700 bg-slate-800 p-2 text-center"
+                style={{ borderTopColor: activeTeam?.color, borderTopWidth: 3 }}
+              >
+                <div className="text-2xl font-black tabular-nums">{entry.year}</div>
+                <div className="line-clamp-2 text-[11px] leading-tight text-slate-400">{entry.title ?? ""}</div>
+              </div>
+            ),
+          )}
         </div>
       </div>
 

@@ -33,6 +33,14 @@ export interface ActiveTurnView {
   suggestions: Array<{ playerId: string; playerName: string; index: number }>;
   /** ms-epoch the placer's clock runs out (auto-resolve). null = no timer. */
   placeDeadline: number | null;
+  /**
+   * During "suspense", the placer's chosen slot on their team's timeline.
+   * Clients render a "?" placeholder tile there so a correct guess doesn't
+   * spoil the answer before the reveal. Null outside suspense.
+   */
+  pendingPlacement: { teamId: string; index: number } | null;
+  /** Same idea for the stealer's chosen slot (if any). */
+  pendingStealPlacement: { teamId: string; index: number } | null;
 }
 
 export interface RevealedSong {
