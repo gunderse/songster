@@ -5,9 +5,11 @@ import { artUrl } from "../api";
 export function HubGame({
   room,
   emcee,
+  commentaryPending = false,
 }: {
   room: RoomState;
   emcee?: { hostName: string; text: string } | null;
+  commentaryPending?: boolean;
 }) {
   const game = room.game;
   if (game === null) return null;
@@ -22,6 +24,12 @@ export function HubGame({
           {team?.name}
         </div>
         <Scoreboard room={room} />
+        {commentaryPending && (
+          <div className="mt-6 flex items-center gap-3 rounded-full border border-amber-400/40 bg-amber-500/10 px-5 py-2 text-amber-200">
+            <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-amber-300" />
+            🎙 The host is writing the finale…
+          </div>
+        )}
       </div>
     );
   }
@@ -90,12 +98,17 @@ export function HubGame({
         )}
       </div>
 
-      {emcee != null && emcee.text.length > 0 && (
+      {emcee != null && emcee.text.length > 0 ? (
         <div className="mx-auto max-w-2xl text-center">
           <div className="text-sm uppercase tracking-[0.25em] text-amber-300">🎙 {emcee.hostName}</div>
           <p className="mt-1 text-xl italic text-slate-200">“{emcee.text}”</p>
         </div>
-      )}
+      ) : commentaryPending && revealing ? (
+        <div className="mx-auto flex max-w-md items-center justify-center gap-3 rounded-full border border-amber-400/40 bg-amber-500/10 px-5 py-2 text-amber-200">
+          <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-amber-300" />
+          🎙 Writing commentary…
+        </div>
+      ) : null}
 
       {/* Active team's timeline */}
       {active !== null && (

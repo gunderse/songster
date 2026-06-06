@@ -4,37 +4,60 @@ import { socket } from "../socket";
 import { useRoomState } from "../useRoom";
 import { Play } from "./Play";
 
-export function Join({ code }: { code: string }) {
+const NAME_KEY = "songster:lastName";
+const CODE_RE = /^[A-Z0-9]{4}$/u;
+
+export function Join({ initialCode }: { initialCode: string | null }) {
   const room = useRoomState();
-  const [name, setName] = useState("");
+  const [code, setCode] = useState<string>((initialCode ?? "").toUpperCase());
+  const [name, setName] = useState<string>(() => {
+    try {
+      return localStorage.getItem(NAME_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const joinedNameRef = useRef<string | null>(null);
+  const joinedRef = useRef<{ code: string; name: string } | null>(null);
 
   // Re-associate this socket with our player after any reconnect (so a phone
   // that briefly drops mid-game keeps its place instead of getting stuck).
   useEffect(() => {
     function onReconnect() {
-      const joinedName = joinedNameRef.current;
-      if (joinedName !== null) socket.emit("room:join", { code, name: joinedName }, () => undefined);
+      const j = joinedRef.current;
+      if (j !== null) socket.emit("room:join", { code: j.code, name: j.name }, () => undefined);
     }
     socket.on("connect", onReconnect);
     return () => {
       socket.off("connect", onReconnect);
     };
-  }, [code]);
+  }, []);
 
   function join() {
-    const trimmed = name.trim();
-    if (trimmed.length === 0) return;
+    const trimmedName = name.trim();
+    const trimmedCode = code.trim().toUpperCase();
+    if (trimmedName.length === 0) {
+      setError("Enter your name.");
+      return;
+    }
+    if (!CODE_RE.test(trimmedCode)) {
+      setError("Enter the 4-letter room code from the hub.");
+      return;
+    }
     setBusy(true);
     setError(null);
+    try {
+      localStorage.setItem(NAME_KEY, trimmedName);
+    } catch {
+      // ignore (private mode, etc.)
+    }
     const emit = () =>
-      socket.emit("room:join", { code, name: trimmed }, (res) => {
+      socket.emit("room:join", { code: trimmedCode, name: trimmedName }, (res) => {
         setBusy(false);
         if (res.ok) {
-          joinedNameRef.current = trimmed;
+          joinedRef.current = { code: trimmedCode, name: trimmedName };
           setPlayerId(res.playerId);
         } else {
           setError(res.error);
@@ -47,28 +70,47 @@ export function Join({ code }: { code: string }) {
     }
   }
 
-  // ── name entry ──────────────────────────────────────────────────────────
+  // ── code + name entry ──────────────────────────────────────────────────
   if (playerId === null) {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-5 p-6 text-slate-100">
         <h1 className="text-4xl font-black">🎵 Songster</h1>
-        <p className="text-slate-400">
-          Joining room <span className="font-bold tracking-widest text-indigo-300">{code}</span>
-        </p>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && join()}
-          placeholder="Your name"
-          maxLength={24}
-          autoFocus
-          className="w-full max-w-xs rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-center text-xl outline-none focus:border-indigo-500"
-        />
+        <p className="text-slate-400">Enter the 4-letter code from the big screen.</p>
+
+        <label className="flex w-full max-w-xs flex-col items-stretch gap-1">
+          <span className="text-xs uppercase tracking-widest text-slate-500">Room code</span>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/gu, "").slice(0, 4))}
+            onKeyDown={(e) => e.key === "Enter" && join()}
+            placeholder="ABCD"
+            inputMode="text"
+            autoCapitalize="characters"
+            spellCheck={false}
+            maxLength={4}
+            autoFocus={code.length < 4}
+            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-center text-3xl font-black tracking-[0.4em] uppercase outline-none focus:border-indigo-500"
+          />
+        </label>
+
+        <label className="flex w-full max-w-xs flex-col items-stretch gap-1">
+          <span className="text-xs uppercase tracking-widest text-slate-500">Your name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && join()}
+            placeholder="Your name"
+            maxLength={24}
+            autoFocus={code.length === 4 && name.length === 0}
+            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-center text-xl outline-none focus:border-indigo-500"
+          />
+        </label>
+
         {error !== null && <p className="text-rose-400">{error}</p>}
         <button
           type="button"
           onClick={join}
-          disabled={busy || name.trim().length === 0}
+          disabled={busy || name.trim().length === 0 || !CODE_RE.test(code.trim().toUpperCase())}
           className="w-full max-w-xs rounded-xl bg-indigo-500 px-6 py-3 text-lg font-semibold text-white hover:bg-indigo-400 disabled:opacity-40"
         >
           {busy ? "Joining…" : "Join game"}
@@ -79,7 +121,6 @@ export function Join({ code }: { code: string }) {
 
   // ── lobby ───────────────────────────────────────────────────────────────
   const me = room?.players.find((player) => player.id === playerId) ?? null;
-  const myTeam = room?.teams.find((team) => team.id === me?.teamId) ?? null;
 
   if (room !== null && room.status !== "lobby") {
     return <Play room={room} playerId={playerId} />;

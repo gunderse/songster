@@ -15,7 +15,7 @@ export const deckFilterSchema = z.object({
 export type DeckFilter = z.infer<typeof deckFilterSchema>;
 
 export const roomConfigSchema = z.object({
-  targetLength: z.number().int().min(3).max(20).default(10),
+  targetLength: z.number().int().min(3).max(20).default(7),
   tokensPerPlayer: z.number().int().min(0).max(5).default(2),
   snippetLenS: z.number().int().min(5).max(60).default(30),
   teamCount: z.number().int().min(2).max(4).default(2),

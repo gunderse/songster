@@ -24,6 +24,8 @@ export interface ActiveTurnView {
   snippetPlayingUntil: number;
   /** An opponent who has spent a Steal token on this turn (spoiler-safe). */
   steal: { teamId: string; playerName: string } | null;
+  /** Non-binding teammate suggestions for the placer (M8). */
+  suggestions: Array<{ playerId: string; playerName: string; index: number }>;
 }
 
 export interface RevealedSong {
@@ -60,6 +62,10 @@ export interface GameView {
   winnerTeamId: string | null;
   /** Approved songs (matching the deck) not yet used this game. */
   remaining: number;
+  /** ms-epoch; non-null during the pre-game countdown so hubs/players can show a timer. */
+  countdownEndsAt: number | null;
+  /** True while the server is generating an outcome-aware emcee/showcase line. */
+  commentaryPending: boolean;
 }
 
 export const placeCardSchema = z.object({ index: z.number().int().min(0).max(64) });

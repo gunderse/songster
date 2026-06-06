@@ -15,7 +15,7 @@ export function Admin() {
   const [error, setError] = useState<string | null>(null);
 
   const [teamCount, setTeamCount] = useState(2);
-  const [targetLength, setTargetLength] = useState(10);
+  const [targetLength, setTargetLength] = useState(7);
   const [tokens, setTokens] = useState(2);
   const [snippetLen, setSnippetLen] = useState(30);
   const [genres, setGenres] = useState<string[]>([]);
@@ -132,14 +132,9 @@ export function Admin() {
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => socket.emit("room:start", { code })}
-            disabled={room.status !== "lobby" || room.players.length === 0}
-            className="mt-6 rounded-lg bg-emerald-600 px-6 py-2.5 font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
-          >
-            {room.status === "lobby" ? "Start game" : "Game started"}
-          </button>
+          <p className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
+            🎬 Open the <a className="text-indigo-300 underline" href={hubUrl(code)} target="_blank" rel="noreferrer">Hub</a> on the big screen — start the game from there once players have joined.
+          </p>
         </>
       )}
     </main>

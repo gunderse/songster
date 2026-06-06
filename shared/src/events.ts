@@ -46,12 +46,17 @@ export interface ClientToServerEvents {
   "room:create": (payload: { config: RoomConfig }, ack: (res: CreateAck) => void) => void;
   "room:join": (payload: { code: string; name: string }, ack: (res: JoinAck) => void) => void;
   "room:setTeam": (payload: { teamId: string }) => void;
+  /** Trigger the pre-game countdown (Start moved to the hub at M8). */
   "room:start": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
   "player:placeCard": (payload: { index: number }) => void;
   "player:useSkip": () => void;
   "player:stealPlace": (payload: { index: number }) => void;
   "player:replay": () => void;
+  /** Play the next slice of the same song (continuation, hub-only). */
+  "player:playMore": () => void;
+  /** A teammate sends a non-binding placement suggestion to the placer (M8). */
+  "player:suggestPlacement": (payload: { index: number }) => void;
   "admin:addBot": (payload: { code: string }) => void;
   "admin:removeBot": (payload: { code: string; playerId: string }) => void;
 }

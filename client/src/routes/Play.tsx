@@ -17,6 +17,8 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   const [committed, setCommitted] = useState(false);
   const [stealMode, setStealMode] = useState(false);
   const [stealSlot, setStealSlot] = useState<number | null>(null);
+  const [suggestMode, setSuggestMode] = useState(false);
+  const [suggestSlot, setSuggestSlot] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
@@ -31,6 +33,8 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     setCommitted(false);
     setStealMode(false);
     setStealSlot(null);
+    setSuggestMode(false);
+    setSuggestSlot(null);
   }, [turnSig]);
 
   if (game === null || me === null) {
@@ -78,15 +82,18 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── my turn to place ──────────────────────────────────────────────────
   if (amPlacer && active.phase === "placing") {
+    const suggestions = active.suggestions ?? [];
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100">
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
         <div className="text-center">
           <div className="text-sm text-slate-500">Your turn, {me.name}</div>
           <h1 className="text-2xl font-black">Where does it go?</h1>
           <p className="text-sm text-slate-400">Listen on the big screen 🔊, then tap the spot where this song fits by year.</p>
         </div>
 
-        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} />
+        <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#64748b"} onUse={(i) => setSelectedSlot(i)} />
+
+        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} />
 
         <div className="mt-auto flex flex-col gap-2">
           <button
@@ -110,7 +117,10 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               🎟️ Skip this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"} left
             </button>
           )}
-          <ReplayButton ready={now >= active.snippetPlayingUntil} />
+          <div className="flex gap-2">
+            <ReplayButton ready={now >= active.snippetPlayingUntil} />
+            <PlayMoreButton ready={now >= active.snippetPlayingUntil} />
+          </div>
         </div>
       </main>
     );
@@ -123,6 +133,46 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     me.teamId !== active.teamId &&
     me.tokens > 0 &&
     active.steal === null;
+
+  const canSuggest =
+    active !== null &&
+    active.phase === "placing" &&
+    me.teamId !== null &&
+    me.teamId === active.teamId &&
+    me.id !== active.placerId;
+
+  const mySuggestion = active?.suggestions?.find((s) => s.playerId === me.id) ?? null;
+
+  // ── suggest mode: send a non-binding hint to your placer ──────────────
+  if (suggestMode && active !== null) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
+        <div className="text-center">
+          <div className="text-sm font-semibold text-indigo-300">💡 Suggesting to {placerName}</div>
+          <h1 className="text-2xl font-black">Where do you think it fits?</h1>
+          <p className="text-sm text-slate-400">Your hint shows up on the placer's screen — they decide.</p>
+        </div>
+        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={suggestSlot} onSelect={setSuggestSlot} />
+        <div className="mt-auto flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={suggestSlot === null}
+            onClick={() => {
+              if (suggestSlot === null) return;
+              socket.emit("player:suggestPlacement", { index: suggestSlot });
+              setSuggestMode(false);
+            }}
+            className="rounded-xl bg-indigo-500 px-6 py-3 text-lg font-semibold text-white hover:bg-indigo-400 disabled:opacity-40"
+          >
+            {suggestSlot === null ? "Tap a spot above ↑" : "Send suggestion 💡"}
+          </button>
+          <button type="button" onClick={() => setSuggestMode(false)} className="text-sm text-slate-500">
+            Cancel
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   // ── steal mode: place your challenge on your own timeline ─────────────
   if (stealMode && active !== null) {
@@ -166,7 +216,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── waiting (someone else is placing) ─────────────────────────────────
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
       <div className="text-center">
         <div className="text-sm text-slate-500">Room {room.code}</div>
         {active !== null ? (
@@ -184,19 +234,34 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           🥷 {active.steal.playerName} ({room.teams.find((t) => t.id === active.steal!.teamId)?.name}) is stealing!
         </p>
       )}
-      {canSteal && (
-        <button
-          type="button"
-          onClick={() => setStealMode(true)}
-          className="self-center rounded-lg bg-amber-600/90 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-500"
-        >
-          🥷 Steal this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"}
-        </button>
-      )}
+      <div className="flex flex-wrap justify-center gap-2">
+        {canSteal && (
+          <button
+            type="button"
+            onClick={() => setStealMode(true)}
+            className="rounded-lg bg-amber-600/90 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-500"
+          >
+            🥷 Steal · {me.tokens} {me.tokens === 1 ? "token" : "tokens"}
+          </button>
+        )}
+        {canSuggest && (
+          <button
+            type="button"
+            onClick={() => {
+              setSuggestSlot(mySuggestion?.index ?? null);
+              setSuggestMode(true);
+            }}
+            className="rounded-lg bg-indigo-500/90 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+          >
+            💡 {mySuggestion !== null ? "Update suggestion" : "Suggest a spot"}
+          </button>
+        )}
+      </div>
 
       {active !== null && active.phase === "placing" && (
-        <div className="flex justify-center">
+        <div className="mx-auto flex w-full max-w-sm gap-2">
           <ReplayButton ready={now >= active.snippetPlayingUntil} />
+          <PlayMoreButton ready={now >= active.snippetPlayingUntil} />
         </div>
       )}
 
@@ -221,8 +286,10 @@ function TimelinePicker(props: {
   selected: number | null;
   onSelect: (index: number) => void;
   accent?: "emerald" | "amber";
+  /** Indices the placer's teammates have suggested — badged but not selected. */
+  suggestionIndices?: number[];
 }) {
-  const { cards, teamColor, selected, onSelect, accent = "emerald" } = props;
+  const { cards, teamColor, selected, onSelect, accent = "emerald", suggestionIndices = [] } = props;
   const selClass =
     accent === "amber"
       ? "border-amber-400 bg-amber-500/25 text-amber-100"
@@ -235,20 +302,28 @@ function TimelinePicker(props: {
     return `Between ${cards[i - 1]!.year} & ${cards[i]!.year}`;
   };
 
+  const suggestCount = (i: number): number => suggestionIndices.filter((s) => s === i).length;
+
   const rows: React.ReactNode[] = [];
   for (let i = 0; i <= cards.length; i += 1) {
     const isSel = selected === i;
+    const suggestN = suggestCount(i);
     rows.push(
       <button
         key={`gap-${i}`}
         type="button"
         onClick={() => onSelect(i)}
-        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-bold transition ${
+        className={`relative flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-bold transition ${
           isSel ? `${selClass} border-solid` : "border-dashed border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
         }`}
       >
         <span className="text-base">{isSel ? "✓" : "＋"}</span>
         {gapLabel(i)}
+        {suggestN > 0 && (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] text-white">
+            💡 {suggestN}
+          </span>
+        )}
       </button>,
     );
     if (i < cards.length) {
@@ -324,6 +399,53 @@ function Scoreboard({ room }: { room: RoomState }) {
   );
 }
 
+function SuggestionsList({
+  suggestions,
+  cards,
+  accentColor,
+  onUse,
+}: {
+  suggestions: Array<{ playerId: string; playerName: string; index: number }>;
+  cards: TimelineCardView[];
+  accentColor: string;
+  onUse: (index: number) => void;
+}) {
+  if (suggestions.length === 0) return null;
+  const label = (i: number): string => {
+    if (cards.length === 0) return "Place it here";
+    if (i === 0) return `Before ${cards[0]!.year}`;
+    if (i === cards.length) return `After ${cards[cards.length - 1]!.year}`;
+    return `Between ${cards[i - 1]!.year} & ${cards[i]!.year}`;
+  };
+  return (
+    <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3">
+      <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-200">
+        💡 Teammate suggestions
+        <span className="rounded-full bg-indigo-500/30 px-1.5 py-0.5 text-[10px]" style={{ color: accentColor }}>
+          {suggestions.length}
+        </span>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {suggestions.map((s) => (
+          <li key={s.playerId}>
+            <button
+              type="button"
+              onClick={() => onUse(s.index)}
+              className="flex w-full items-center justify-between rounded-lg bg-slate-900/60 px-3 py-1.5 text-left text-sm hover:bg-slate-900"
+            >
+              <span>
+                <span className="font-semibold text-indigo-200">{s.playerName}</span>
+                <span className="text-slate-400"> → {label(s.index)}</span>
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">Use</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Centered({ children }: { children: React.ReactNode }) {
   return <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100">{children}</main>;
 }
@@ -334,9 +456,22 @@ function ReplayButton({ ready }: { ready: boolean }) {
       type="button"
       disabled={!ready}
       onClick={() => socket.emit("player:replay")}
-      className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+      className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
     >
-      {ready ? "🔁 Play again on the hub" : "🔁 Playing…"}
+      {ready ? "🔁 Play again" : "🔁 Playing…"}
+    </button>
+  );
+}
+
+function PlayMoreButton({ ready }: { ready: boolean }) {
+  return (
+    <button
+      type="button"
+      disabled={!ready}
+      onClick={() => socket.emit("player:playMore")}
+      className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+    >
+      {ready ? "⏩ Play more…" : "⏩ Playing…"}
     </button>
   );
 }

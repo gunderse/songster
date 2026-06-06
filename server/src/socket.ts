@@ -109,6 +109,16 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       manager.replay(socket.id);
     });
 
+    socket.on("player:playMore", () => {
+      manager.playMore(socket.id);
+    });
+
+    socket.on("player:suggestPlacement", (payload) => {
+      const parsed = placeCardSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.suggestPlacement(socket.id, parsed.data.index);
+    });
+
     socket.on("hub:join", (payload, ack) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) {

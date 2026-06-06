@@ -28,16 +28,20 @@ const TEAM_PRESETS: Array<{ name: string; color: string }> = [
 // Unambiguous alphabet (no 0/O/1/I) for human-typeable room codes.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-/** How long the reveal stays up before the next turn begins. */
-const REVEAL_MS = 5000;
+/** How long the reveal stays up before the next turn begins (when no voice arrives). */
+const REVEAL_MS = 6000;
 /** Max we'll wait at reveal for the (outcome-aware) emcee line before giving up. */
-const EMCEE_WAIT_MS = 11000;
+const EMCEE_WAIT_MS = 14000;
+/** Always pause at least this long after a reveal SFX before advancing (drama beat). */
+const POST_REVEAL_MIN_MS = 4500;
 /** Floor for a showcase reveal before its cue durations are known. */
-const SHOWCASE_FLOOR_MS = 9000;
+const SHOWCASE_FLOOR_MS = 11000;
+/** Pre-game countdown — gives late joiners a grace period before turn 1. */
+const COUNTDOWN_MS = 6000;
 
-/** Bots "think" for a beat before placing randomly. */
-const BOT_MIN_MS = 1800;
-const BOT_JITTER_MS = 1600;
+/** Bots "think" for a beat before placing randomly. Bumped so they don't rush past the SFX. */
+const BOT_MIN_MS = 3500;
+const BOT_JITTER_MS = 2500;
 
 const BOT_NAMES = ["Robby", "Circuit", "Vinyl", "Disco-Tron", "Mixtape", "Jukebot", "Decibel", "Synthia", "Cassette", "Boombox"];
 
@@ -74,6 +78,12 @@ interface ActiveTurn {
   snippetEndsAt: number;
   emceeClip: EmceeClip | null;
   emceePromise: Promise<void> | null;
+  /** Track how far we've already played into the song for "Play More" continuations. */
+  playedThroughS: number;
+  /** Teammate suggestions for the placer (M8). */
+  suggestions: Map<string, { teamId: string; index: number }>;
+  /** True while the outcome-aware emcee/showcase line is being written + voiced. */
+  commentaryPending: boolean;
 }
 
 interface Game {
@@ -89,6 +99,9 @@ interface Game {
   leaderTeamId: string | null;
   hostName?: string | null;
   hostPromise?: Promise<string | null>;
+  /** Set during the pre-game countdown; null once turn 1 begins. */
+  countdownEndsAt: number | null;
+  countdownTimer: ReturnType<typeof setTimeout> | null;
 }
 
 interface Room {
@@ -313,12 +326,56 @@ export class RoomManager {
       winnerTeamId: null,
       revealTimer: null,
       leaderTeamId: null,
+      countdownEndsAt: Date.now() + COUNTDOWN_MS,
+      countdownTimer: null,
     };
     for (const player of room.players.values()) {
       player.tokens = room.config.tokensPerPlayer;
     }
     room.status = "playing";
-    this.beginTurn(room);
+    // Warm the host pick during the countdown so turn 1's commentary is fast.
+    this.warmHost(room);
+    room.game.countdownTimer = setTimeout(() => {
+      if (room.game !== null) {
+        room.game.countdownEndsAt = null;
+        room.game.countdownTimer = null;
+      }
+      this.beginTurn(room);
+    }, COUNTDOWN_MS);
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  /** A teammate sends a non-binding suggestion to the active placer. */
+  suggestPlacement(socketId: string, index: number): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (player.teamId === null || player.teamId !== game.active.teamId) return room;
+    if (player.id === game.active.placerId) return room; // the placer doesn't suggest to themselves
+    game.active.suggestions.set(player.id, { teamId: player.teamId, index });
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  /** Replay a continuation: the NEXT slice of the same song, starting where the last play ended. */
+  playMore(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (Date.now() < game.active.snippetEndsAt) return room; // still playing
+    const song = game.active.song;
+    const lenS = song.snippetLenS ?? room.config.snippetLenS;
+    const duration = song.durationS ?? Number.POSITIVE_INFINITY;
+    const nextStart = Math.min(game.active.playedThroughS, Math.max(0, duration - 5));
+    game.active.playedThroughS = nextStart + lenS;
+    game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
+    this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: nextStart, lenS });
+    this.hooks.broadcast(room.code);
     return room;
   }
 
@@ -355,6 +412,9 @@ export class RoomManager {
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
       emceeClip: null,
       emceePromise: null,
+      playedThroughS: song.snippetStartS + lenS,
+      suggestions: new Map(),
+      commentaryPending: false,
     };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
@@ -480,6 +540,11 @@ export class RoomManager {
       headline = "Time for a check-in on the competition!";
     }
 
+    // Mark commentary as pending so hubs/phones can show a "writing…" indicator
+    // (avoids the awkward silent gap while Ollama+Voice work).
+    game.active.commentaryPending = true;
+    this.hooks.broadcast(room.code);
+
     if (reason !== null) {
       game.revealTimer = setTimeout(() => this.advanceTurn(room), SHOWCASE_FLOOR_MS);
       void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct);
@@ -586,14 +651,18 @@ export class RoomManager {
     if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "revealing") return;
 
     const clip = game.active.emceeClip;
+    game.active.commentaryPending = false;
     if (game.revealTimer !== null) clearTimeout(game.revealTimer);
     if (clip !== null) {
       this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(2500, clip.durationMs + 1800));
+      // Always hold the reveal at least POST_REVEAL_MIN_MS so the audience can absorb
+      // ✅/❌ + SFX even when bots place fast or the voice is cached/short.
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
     } else {
       // No voice (services down or too slow) — the SFX + on-screen verdict carry it.
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), REVEAL_MS);
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
     }
+    this.hooks.broadcast(room.code);
   }
 
   /** At a peak, build + push a full themed showcase, extending the reveal to fit it. */
@@ -628,7 +697,9 @@ export class RoomManager {
       return;
     }
 
+    if (game.active !== null) game.active.commentaryPending = false;
     this.hooks.showcaseToHubs(room.code, view);
+    this.hooks.broadcast(room.code);
     if (reason !== "finale") {
       const total = view.cues.reduce((sum, cue) => sum + cue.durationMs, 0) + 4000;
       if (game.revealTimer !== null) clearTimeout(game.revealTimer);
@@ -689,6 +760,9 @@ export class RoomManager {
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
       emceeClip: null,
       emceePromise: null,
+      playedThroughS: song.snippetStartS + lenS,
+      suggestions: new Map(),
+      commentaryPending: false,
     };
     game.lastResult = null;
     this.hooks.broadcast(room.code);
@@ -708,6 +782,11 @@ export class RoomManager {
         clearTimeout(game.revealTimer);
         game.revealTimer = null;
       }
+      if (game.countdownTimer !== null) {
+        clearTimeout(game.countdownTimer);
+        game.countdownTimer = null;
+      }
+      game.countdownEndsAt = null;
       if (game.winnerTeamId === null) {
         const leader = [...game.teams].sort((a, b) => b.timeline.length - a.timeline.length)[0];
         game.winnerTeamId = leader?.teamId ?? null;
@@ -772,6 +851,11 @@ export class RoomManager {
                     teamId: game.active.steal.teamId,
                     playerName: room.players.get(game.active.steal.playerId)?.name ?? "—",
                   },
+            suggestions: [...game.active.suggestions.entries()].map(([playerId, s]) => ({
+              playerId,
+              playerName: room.players.get(playerId)?.name ?? "—",
+              index: s.index,
+            })),
           };
 
     return {
@@ -781,6 +865,8 @@ export class RoomManager {
       lastResult: game.lastResult,
       winnerTeamId: game.winnerTeamId,
       remaining: Math.max(0, countAvailable(this.db, room.config.deck, []) - game.used.size),
+      countdownEndsAt: game.countdownEndsAt,
+      commentaryPending: game.active?.commentaryPending ?? false,
     };
   }
 

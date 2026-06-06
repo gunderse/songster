@@ -9,6 +9,9 @@ function Home() {
       <h1 className="text-5xl font-black tracking-tight">🎵 Songster</h1>
       <p className="text-slate-400">LAN music party game — hear a snippet, guess the year, build your team's timeline.</p>
       <nav className="flex flex-wrap justify-center gap-3">
+        <a href="/play" className="rounded-lg bg-emerald-500 px-5 py-2 font-semibold text-white transition hover:bg-emerald-400">
+          📱 Join a game
+        </a>
         <a href="/admin" className="rounded-lg bg-indigo-500 px-5 py-2 font-semibold text-white transition hover:bg-indigo-400">
           Admin
         </a>
@@ -29,9 +32,12 @@ export function App() {
   if (path.startsWith("/library")) return <Library />;
   if (path.startsWith("/admin")) return <Admin />;
   if (path.startsWith("/hub/")) return <Hub code={path.slice("/hub/".length).toUpperCase()} />;
+  if (path.startsWith("/play") || path.startsWith("/join")) {
+    return <Join initialCode={new URLSearchParams(window.location.search).get("code")} />;
+  }
 
   const code = new URLSearchParams(window.location.search).get("code");
-  if (code !== null && code.trim().length > 0) return <Join code={code.toUpperCase()} />;
+  if (code !== null && code.trim().length > 0) return <Join initialCode={code.toUpperCase()} />;
 
   return <Home />;
 }
