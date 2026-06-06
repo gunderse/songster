@@ -76,6 +76,20 @@ export function stopSnippet(): void {
   }
 }
 
+/** Gracefully fade the snippet out (used at the reveal so it isn't an abrupt cut). */
+export function fadeOutSnippet(ms = 1600): void {
+  if (snippetStopTimer !== null) {
+    clearTimeout(snippetStopTimer);
+    snippetStopTimer = null;
+  }
+  const el = snippetEl;
+  if (el === null) return;
+  fade(el, el.volume, 0, ms);
+  setTimeout(() => {
+    if (snippetEl === el) stopSnippet();
+  }, ms + 80);
+}
+
 let voiceEl: HTMLAudioElement | null = null;
 
 /** Play a generated emcee voice clip (separate from the song snippet). */

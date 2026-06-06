@@ -17,7 +17,7 @@ export function Admin() {
   const [teamCount, setTeamCount] = useState(2);
   const [targetLength, setTargetLength] = useState(10);
   const [tokens, setTokens] = useState(2);
-  const [snippetLen, setSnippetLen] = useState(12);
+  const [snippetLen, setSnippetLen] = useState(30);
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
 
@@ -55,7 +55,7 @@ export function Admin() {
           <NumberField label="Teams" value={teamCount} min={2} max={4} onChange={setTeamCount} />
           <NumberField label="Win at" value={targetLength} min={3} max={20} onChange={setTargetLength} />
           <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
-          <NumberField label="Snippet s" value={snippetLen} min={5} max={30} onChange={setSnippetLen} />
+          <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
         </div>
 
         <Section title="Deck filter (optional)" hint="Restrict the song pool by genre / tag. Leave empty for all approved songs.">

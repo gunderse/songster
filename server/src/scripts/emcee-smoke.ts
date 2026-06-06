@@ -16,16 +16,29 @@ if (host === null) {
 }
 
 const samples = [
-  { title: "Take On Me", artist: "A-ha", year: 1985 },
-  { title: "Don't Stop Believin'", artist: "Journey", year: 1981 },
+  {
+    song: { title: "Take On Me", artist: "A-ha", year: 1985 },
+    teamName: "Red",
+    placerName: "Alex",
+    situation: "Score: Red 5, Blue 2 (first to 10). Red is running away with it; Blue is getting shut out. Red is on a 3-in-a-row hot streak.",
+  },
+  {
+    song: { title: "Don't Stop Believin'", artist: "Journey", year: 1981 },
+    teamName: "Blue",
+    placerName: "Sam",
+    situation: "Score: Red 9, Blue 9 (first to 10). It's all tied up. Blue needs just one more to win.",
+  },
 ];
 
-for (const song of samples) {
-  const clip = await emceeService.revealClip(host, song);
+for (const context of samples) {
+  const clip = await emceeService.revealClip(host, context);
   if (clip === null) {
-    logger.error({ song }, "clip generation failed");
+    logger.error({ song: context.song.title }, "clip generation failed");
   } else {
-    logger.info({ song: song.title, hostName: clip.hostName, text: clip.text, durationMs: clip.durationMs, audioUrl: clip.audioUrl }, "clip ready");
+    logger.info(
+      { song: context.song.title, hostName: clip.hostName, text: clip.text, durationMs: clip.durationMs },
+      "clip ready",
+    );
   }
 }
 

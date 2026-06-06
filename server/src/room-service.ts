@@ -5,7 +5,7 @@ import type DatabaseType from "better-sqlite3";
 import type { ActiveTurnView, GameView, StealResultView, TimelineCardView, TurnResultView } from "@songster/shared/game";
 import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
 
-import { emceeService, type EmceeClip } from "./ai/emcee-service.js";
+import { emceeService, type EmceeClip, type EmceeContext } from "./ai/emcee-service.js";
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
 import { countAvailable, sampleOne, sampleSongs, type SampledSong } from "./sampling.js";
 
@@ -49,6 +49,7 @@ interface GameTeam {
   teamId: string;
   timeline: PlacedCard[];
   placerIndex: number;
+  streak: number;
 }
 
 interface ActiveTurn {
@@ -283,7 +284,7 @@ export class RoomManager {
         used.add(seed.songId);
         timeline.push(sampledToCard(seed, true));
       }
-      return { teamId: team.id, timeline, placerIndex: 0 };
+      return { teamId: team.id, timeline, placerIndex: 0, streak: 0 };
     });
 
     room.game = {
@@ -397,6 +398,7 @@ export class RoomManager {
     if (correct) {
       team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
     }
+    team.streak = correct ? team.streak + 1 : 0;
 
     // Resolve a Steal: an opponent wins the card only if the placer was WRONG
     // and the stealer's own placement is correct.
@@ -468,20 +470,55 @@ export class RoomManager {
   private async generateEmcee(room: Room, turnId: number): Promise<void> {
     const game = room.game;
     if (game === null) return;
-    if (game.hostName === undefined) {
+    // Pick the host once; if the voice API was down (null), retry on later turns.
+    if (game.hostName === undefined || game.hostName === null) {
       game.hostPromise ??= emceeService.chooseHost();
       game.hostName = await game.hostPromise;
+      game.hostPromise = undefined;
     }
     if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
-    const song = game.active.song;
-    const clip = await emceeService.revealClip(game.hostName, {
-      title: song.title,
-      artist: song.artist,
-      year: song.year,
-    });
+    const context = this.buildEmceeContext(room, game);
+    const clip = await emceeService.revealClip(game.hostName, context);
     if (game.active !== null && game.turnCounter === turnId) {
       game.active.emceeClip = clip;
     }
+  }
+
+  private buildEmceeContext(room: Room, game: Game): EmceeContext {
+    const active = game.active!;
+    return {
+      song: { title: active.song.title, artist: active.song.artist, year: active.song.year },
+      teamName: room.teams.find((t) => t.id === active.teamId)?.name ?? "the team",
+      placerName: room.players.get(active.placerId)?.name ?? "someone",
+      situation: this.describeSituation(room, game),
+    };
+  }
+
+  /** A short, spoiler-free summary of the standings for the emcee to riff on. */
+  private describeSituation(room: Room, game: Game): string {
+    const standings = game.teams.map((t) => ({
+      name: room.teams.find((rt) => rt.id === t.teamId)?.name ?? "?",
+      count: t.timeline.length,
+      streak: t.streak,
+      teamId: t.teamId,
+    }));
+    const sorted = [...standings].sort((a, b) => b.count - a.count);
+    const top = sorted[0]!;
+    const bottom = sorted[sorted.length - 1]!;
+    const bits = [`Score: ${standings.map((s) => `${s.name} ${s.count}`).join(", ")} (first to ${game.target}).`];
+
+    if (standings.length > 1 && standings.every((s) => s.count === standings[0]!.count)) {
+      bits.push("It's all tied up.");
+    } else if (top.count - bottom.count >= 3) {
+      bits.push(`${top.name} is running away with it; ${bottom.name} is getting shut out.`);
+    }
+    const aboutToWin = standings.find((s) => s.count === game.target - 1);
+    if (aboutToWin !== undefined) bits.push(`${aboutToWin.name} needs just one more to win.`);
+    const activeStanding = standings.find((s) => s.teamId === game.active!.teamId);
+    if (activeStanding !== undefined && activeStanding.streak >= 2) {
+      bits.push(`${activeStanding.name} is on a ${activeStanding.streak}-in-a-row hot streak.`);
+    }
+    return bits.join(" ");
   }
 
   /** At reveal, push the pre-generated voice line to the hubs and let it finish before advancing. */

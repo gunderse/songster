@@ -19,7 +19,7 @@ export interface GeneratedVoiceClip {
 }
 
 const revealAudioCacheDir = path.resolve(import.meta.dirname, "../../cache/reveal-audio");
-const requestTimeoutMs = Number(process.env.SONGSTER_VOICE_API_TIMEOUT_MS ?? 60_000);
+const requestTimeoutMs = Number(process.env.SONGSTER_VOICE_API_TIMEOUT_MS ?? 30_000);
 
 export function getRevealAudioCacheDir(): string {
   return revealAudioCacheDir;

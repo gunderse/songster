@@ -3,7 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
 import { audioStreamUrl } from "../api";
-import { audioUnlocked, playSfx, playSnippet, playVoiceUrl, stopSnippet, stopVoice, unlockAudio } from "../audio";
+import {
+  audioUnlocked,
+  fadeOutSnippet,
+  playSfx,
+  playSnippet,
+  playVoiceUrl,
+  stopSnippet,
+  stopVoice,
+  unlockAudio,
+} from "../audio";
 import { HubGame } from "../components/HubGame";
 import { Roster } from "../components/Roster";
 import { socket } from "../socket";
@@ -15,6 +24,8 @@ export function Hub({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(audioUnlocked());
   const [emcee, setEmcee] = useState<{ hostName: string; text: string } | null>(null);
+  const pendingSnippetRef = useRef<{ url: string; startS: number; lenS: number; until: number } | null>(null);
+  const voiceTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     QRCode.toDataURL(joinUrl(code), { width: 360, margin: 1 }).then(setQr).catch(() => undefined);
@@ -23,15 +34,21 @@ export function Hub({ code }: { code: string }) {
       socket.emit("hub:join", { code }, (res) => setError(res.ok ? null : res.error));
     }
     function onAudio(payload: { songId: string; startS: number; lenS: number }) {
+      if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       setEmcee(null);
       stopVoice();
+      const url = audioStreamUrl(payload.songId);
+      // Remember it so a late audio-unlock can replay the in-progress snippet.
+      pendingSnippetRef.current = { url, startS: payload.startS, lenS: payload.lenS, until: Date.now() + payload.lenS * 1000 + 1000 };
       playSfx("turn");
-      playSnippet(audioStreamUrl(payload.songId), payload.startS, payload.lenS);
+      playSnippet(url, payload.startS, payload.lenS);
     }
     function onEmcee(payload: { audioUrl: string; hostName: string; text: string }) {
-      stopSnippet();
+      // Fade the song out, then let the host speak after a beat (not an abrupt cut).
+      fadeOutSnippet(1600);
       setEmcee({ hostName: payload.hostName, text: payload.text });
-      playVoiceUrl(payload.audioUrl);
+      if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
+      voiceTimerRef.current = window.setTimeout(() => playVoiceUrl(payload.audioUrl), 1400);
     }
 
     socket.on("connect", register);
@@ -44,6 +61,7 @@ export function Hub({ code }: { code: string }) {
       socket.off("connect", register);
       socket.off("audio:play", onAudio);
       socket.off("emcee:play", onEmcee);
+      if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       stopSnippet();
       stopVoice();
     };
@@ -59,7 +77,7 @@ export function Hub({ code }: { code: string }) {
     const sig = r === null ? null : `${r.teamId}:${r.song.songId}:${r.placedIndex}:${r.correct}`;
     if (sig !== null && sig !== lastResultRef.current) {
       lastResultRef.current = sig;
-      stopSnippet();
+      fadeOutSnippet(2000);
       playSfx(r!.correct ? "correct" : "wrong");
     }
     if (game.winnerTeamId !== null && !wonRef.current) {
@@ -89,6 +107,11 @@ export function Hub({ code }: { code: string }) {
           onClick={() => {
             unlockAudio();
             setStarted(true);
+            // If a snippet is already mid-play (game started before this tap), play it now.
+            const pending = pendingSnippetRef.current;
+            if (pending !== null && pending.until > Date.now()) {
+              playSnippet(pending.url, pending.startS, pending.lenS);
+            }
           }}
           className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-slate-950/95"
         >
