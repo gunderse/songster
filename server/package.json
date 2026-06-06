@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "scan": "tsx src/scripts/scan.ts",
-    "emcee:smoke": "tsx src/scripts/emcee-smoke.ts"
+    "emcee:smoke": "tsx src/scripts/emcee-smoke.ts",
+    "showcase:smoke": "tsx src/scripts/showcase-smoke.ts"
   },
   "dependencies": {
     "@songster/shared": "workspace:*",

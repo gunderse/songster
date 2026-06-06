@@ -64,3 +64,23 @@ export interface GameView {
 
 export const placeCardSchema = z.object({ index: z.number().int().min(0).max(64) });
 export type PlaceCard = z.infer<typeof placeCardSchema>;
+
+// ── showcase (M7): a themed multi-character produced segment at the peaks ──
+
+export interface ShowcaseCueView {
+  speakerLabel: string;
+  characterName: string | null;
+  text: string;
+  audioUrl: string | null;
+  durationMs: number;
+}
+
+export interface ShowcaseView {
+  themeId: string;
+  themeLabel: string;
+  tagline: string;
+  bgVideoUrl: string | null;
+  bgImageUrl: string | null;
+  bgMusicUrl: string | null;
+  cues: ShowcaseCueView[];
+}

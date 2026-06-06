@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import path from "node:path";
 
 import express from "express";
 import { Server } from "socket.io";
@@ -27,6 +28,7 @@ app.use(express.json());
 app.use("/api/library", createLibraryRouter(db));
 registerAudioRoutes(app, db);
 app.use("/reveal-audio", express.static(getRevealAudioCacheDir()));
+app.use("/showcase", express.static(path.resolve(import.meta.dirname, "../../assets/showcase")));
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, serverNow: Date.now() });
 });
@@ -48,6 +50,10 @@ const manager = new RoomManager(db, {
   emceeToHubs: (code, payload) => {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("emcee:play", payload);
+  },
+  showcaseToHubs: (code, payload) => {
+    const hubs = manager.hubSocketIds(code);
+    if (hubs.length > 0) io.to(hubs).emit("showcase:play", payload);
   },
 });
 

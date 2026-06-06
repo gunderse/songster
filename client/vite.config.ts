@@ -14,6 +14,7 @@ const proxiedPaths = [
   "/music",
   "/backgrounds",
   "/reveal-audio",
+  "/showcase",
   "/sounds",
 ];
 

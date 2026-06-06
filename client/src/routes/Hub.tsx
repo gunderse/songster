@@ -2,19 +2,26 @@ import { useEffect, useRef, useState } from "react";
 
 import QRCode from "qrcode";
 
+import type { ShowcaseView } from "@songster/shared/game";
+
 import { audioStreamUrl } from "../api";
 import {
   audioUnlocked,
   fadeOutSnippet,
+  playCues,
   playSfx,
   playSnippet,
   playVoiceUrl,
+  startBgMusic,
+  stopBgMusic,
+  stopCues,
   stopSnippet,
   stopVoice,
   unlockAudio,
 } from "../audio";
 import { HubGame } from "../components/HubGame";
 import { Roster } from "../components/Roster";
+import { ShowcaseOverlay } from "../components/ShowcaseOverlay";
 import { socket } from "../socket";
 import { joinUrl, useRoomState } from "../useRoom";
 
@@ -24,6 +31,8 @@ export function Hub({ code }: { code: string }) {
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState(audioUnlocked());
   const [emcee, setEmcee] = useState<{ hostName: string; text: string } | null>(null);
+  const [showcase, setShowcase] = useState<ShowcaseView | null>(null);
+  const [showcaseCue, setShowcaseCue] = useState(0);
   const pendingSnippetRef = useRef<{ url: string; startS: number; lenS: number; until: number } | null>(null);
   const voiceTimerRef = useRef<number | undefined>(undefined);
 
@@ -37,6 +46,9 @@ export function Hub({ code }: { code: string }) {
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       setEmcee(null);
       stopVoice();
+      stopCues();
+      stopBgMusic();
+      setShowcase(null);
       const url = audioStreamUrl(payload.songId);
       // Remember it so a late audio-unlock can replay the in-progress snippet.
       pendingSnippetRef.current = { url, startS: payload.startS, lenS: payload.lenS, until: Date.now() + payload.lenS * 1000 + 1000 };
@@ -50,10 +62,29 @@ export function Hub({ code }: { code: string }) {
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       voiceTimerRef.current = window.setTimeout(() => playVoiceUrl(payload.audioUrl), 1400);
     }
+    function onShowcase(view: ShowcaseView) {
+      fadeOutSnippet(900);
+      stopVoice();
+      setEmcee(null);
+      setShowcase(view);
+      setShowcaseCue(0);
+      if (view.bgMusicUrl !== null) startBgMusic(view.bgMusicUrl, 0.18);
+      playCues(view.cues, (i) => {
+        if (i === -1) {
+          window.setTimeout(() => {
+            stopBgMusic();
+            setShowcase(null);
+          }, 1400);
+        } else {
+          setShowcaseCue(i);
+        }
+      });
+    }
 
     socket.on("connect", register);
     socket.on("audio:play", onAudio);
     socket.on("emcee:play", onEmcee);
+    socket.on("showcase:play", onShowcase);
     if (!socket.connected) socket.connect();
     else register();
 
@@ -61,9 +92,12 @@ export function Hub({ code }: { code: string }) {
       socket.off("connect", register);
       socket.off("audio:play", onAudio);
       socket.off("emcee:play", onEmcee);
+      socket.off("showcase:play", onShowcase);
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       stopSnippet();
       stopVoice();
+      stopCues();
+      stopBgMusic();
     };
   }, [code]);
 
@@ -120,6 +154,8 @@ export function Hub({ code }: { code: string }) {
           <div className="text-slate-500">Room {code} · audio plays here</div>
         </button>
       )}
+
+      {showcase !== null && <ShowcaseOverlay view={showcase} cueIndex={showcaseCue} />}
 
       <div className="mx-auto max-w-5xl">
         {inLobby ? (

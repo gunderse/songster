@@ -23,3 +23,6 @@ export const musicDir = process.env.SONGSTER_MUSIC_DIR?.trim() || path.join(repo
 export const ollamaUrl = (process.env.SONGSTER_OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, "");
 export const ollamaModel = process.env.SONGSTER_OLLAMA_MODEL?.trim() || "gemma4:latest";
 export const voiceApiUrl = (process.env.SONGSTER_VOICE_API_URL ?? "http://localhost:3200").replace(/\/+$/, "");
+
+/** Trigger a full themed showcase every Nth turn (plus steals, lead changes, finale). */
+export const showcaseEveryN = Math.max(1, Number(process.env.SONGSTER_SHOWCASE_EVERY_N ?? 4));

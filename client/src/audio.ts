@@ -113,6 +113,70 @@ export function stopVoice(): void {
   }
 }
 
+// ── showcase playback: a looped music bed + sequential voiced cues ──────────
+
+let bgEl: HTMLAudioElement | null = null;
+let cueChain: { cancelled: boolean } | null = null;
+
+export function startBgMusic(url: string, volume = 0.18): void {
+  stopBgMusic();
+  if (!unlocked) return;
+  const el = new Audio(url);
+  el.loop = true;
+  el.volume = volume;
+  bgEl = el;
+  void el.play().catch(() => undefined);
+}
+
+export function stopBgMusic(): void {
+  if (bgEl !== null) {
+    try {
+      bgEl.pause();
+    } catch {
+      // ignore
+    }
+    bgEl = null;
+  }
+}
+
+/** Play voiced cues in order. `onIndex(i)` advances captions; `onIndex(-1)` signals done. */
+export function playCues(cues: Array<{ audioUrl: string | null; durationMs: number }>, onIndex: (index: number) => void): void {
+  stopVoice();
+  const token = { cancelled: false };
+  cueChain = token;
+  let i = 0;
+  const next = () => {
+    if (token.cancelled) return;
+    if (i >= cues.length) {
+      onIndex(-1);
+      return;
+    }
+    const cue = cues[i]!;
+    onIndex(i);
+    const advance = () => {
+      i += 1;
+      next();
+    };
+    if (cue.audioUrl !== null && unlocked) {
+      const el = new Audio(cue.audioUrl);
+      el.volume = 1;
+      voiceEl = el;
+      el.addEventListener("ended", advance, { once: true });
+      el.addEventListener("error", () => window.setTimeout(advance, 400), { once: true });
+      void el.play().catch(() => window.setTimeout(advance, cue.durationMs));
+    } else {
+      window.setTimeout(advance, cue.durationMs);
+    }
+  };
+  next();
+}
+
+export function stopCues(): void {
+  if (cueChain !== null) cueChain.cancelled = true;
+  cueChain = null;
+  stopVoice();
+}
+
 interface Tone {
   f: number;
   d: number;

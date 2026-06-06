@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { ShowcaseView } from "./game.js";
 import type { CreateAck, HubAck, JoinAck, RoomConfig, RoomState } from "./room.js";
 
 /**
@@ -36,6 +37,8 @@ export interface ServerToClientEvents {
   "audio:play": (payload: { songId: string; startS: number; lenS: number }) => void;
   /** Hub-only: the emcee's voiced reveal line (audio + caption), emitted at reveal. */
   "emcee:play": (payload: { audioUrl: string; hostName: string; text: string }) => void;
+  /** Hub-only: a full themed showcase segment at a peak moment. */
+  "showcase:play": (payload: ShowcaseView) => void;
 }
 
 export interface ClientToServerEvents {

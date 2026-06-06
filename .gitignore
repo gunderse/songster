@@ -14,3 +14,6 @@ server/cache/**
 
 # User-provided media library (read by the app, not source)
 assets/music/
+
+# Themed showcase media (copied from epyc-codex; local only)
+assets/showcase/

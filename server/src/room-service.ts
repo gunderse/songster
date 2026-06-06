@@ -2,10 +2,19 @@ import { randomUUID } from "node:crypto";
 
 import type DatabaseType from "better-sqlite3";
 
-import type { ActiveTurnView, GameView, StealResultView, TimelineCardView, TurnResultView } from "@songster/shared/game";
+import type {
+  ActiveTurnView,
+  GameView,
+  ShowcaseView,
+  StealResultView,
+  TimelineCardView,
+  TurnResultView,
+} from "@songster/shared/game";
 import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@songster/shared/room";
 
 import { emceeService, type EmceeClip, type EmceeContext } from "./ai/emcee-service.js";
+import { showcaseService, type ShowcaseReason } from "./ai/showcase-service.js";
+import { showcaseEveryN } from "./config.js";
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, type PlacedCard } from "./game.js";
 import { countAvailable, sampleOne, sampleSongs, type SampledSong } from "./sampling.js";
 
@@ -21,6 +30,8 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /** How long the reveal stays up before the next turn begins. */
 const REVEAL_MS = 5000;
+/** Floor for a showcase reveal before its cue durations are known. */
+const SHOWCASE_FLOOR_MS = 9000;
 
 /** Bots "think" for a beat before placing randomly. */
 const BOT_MIN_MS = 1800;
@@ -73,6 +84,7 @@ interface Game {
   lastResult: TurnResultView | null;
   winnerTeamId: string | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
+  leaderTeamId: string | null;
   hostName?: string | null;
   hostPromise?: Promise<string | null>;
 }
@@ -94,6 +106,7 @@ export interface RoomHooks {
   broadcast(code: string): void;
   playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
   emceeToHubs(code: string, payload: { audioUrl: string; hostName: string; text: string }): void;
+  showcaseToHubs(code: string, payload: ShowcaseView): void;
 }
 
 /**
@@ -297,6 +310,7 @@ export class RoomManager {
       lastResult: null,
       winnerTeamId: null,
       revealTimer: null,
+      leaderTeamId: null,
     };
     for (const player of room.players.values()) {
       player.tokens = room.config.tokensPerPlayer;
@@ -433,19 +447,51 @@ export class RoomManager {
     game.active.phase = "revealing";
     this.hooks.broadcast(room.code);
 
+    const revealedSong = { title: song.title, artist: song.artist, year: song.year };
     const placerWon = correct && hasWon(team.timeline.length, game.target);
+
+    // Track the lead (for "lead change" showcases).
+    const newLeader = this.uniqueLeader(game);
+    const leadChanged = newLeader !== null && game.leaderTeamId !== null && newLeader !== game.leaderTeamId;
+    if (newLeader !== null) game.leaderTeamId = newLeader;
+
     if (placerWon || stealWonTeamId !== null) {
       game.winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
+      const winnerName = room.teams.find((t) => t.id === game.winnerTeamId)?.name ?? "The winners";
       this.finishGame(room);
+      void this.deliverShowcase(room, game.turnCounter, "finale", `${winnerName} win Songster!`, revealedSong);
       return room;
     }
 
-    game.revealTimer = setTimeout(() => {
-      game.revealTimer = null;
-      game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
-      this.beginTurn(room);
-    }, REVEAL_MS);
-    void this.deliverEmcee(room, game.turnCounter);
+    // Pick the reveal "outro": a full showcase at peaks, else the single emcee line.
+    const teamName = room.teams.find((t) => t.id === team.teamId)?.name ?? "the team";
+    let reason: ShowcaseReason | null = null;
+    let headline = "";
+    if (stealResult?.correct === true) {
+      reason = "steal";
+      headline = `${stealResult.playerName} STOLE the card right out from under ${teamName}!`;
+    } else if (leadChanged) {
+      reason = "leadChange";
+      headline = `${room.teams.find((t) => t.id === newLeader)?.name ?? "Someone"} just grabbed the lead!`;
+    } else if (game.turnCounter % showcaseEveryN === 0) {
+      reason = "milestone";
+      headline = "Time for a check-in on the competition!";
+    }
+
+    game.revealTimer = setTimeout(
+      () => {
+        game.revealTimer = null;
+        game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+        this.beginTurn(room);
+      },
+      reason !== null ? SHOWCASE_FLOOR_MS : REVEAL_MS,
+    );
+
+    if (reason !== null) {
+      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong);
+    } else {
+      void this.deliverEmcee(room, game.turnCounter);
+    }
     return room;
   }
 
@@ -514,7 +560,8 @@ export class RoomManager {
     }
     const aboutToWin = standings.find((s) => s.count === game.target - 1);
     if (aboutToWin !== undefined) bits.push(`${aboutToWin.name} needs just one more to win.`);
-    const activeStanding = standings.find((s) => s.teamId === game.active!.teamId);
+    const activeId = game.active?.teamId;
+    const activeStanding = activeId !== undefined ? standings.find((s) => s.teamId === activeId) : undefined;
     if (activeStanding !== undefined && activeStanding.streak >= 2) {
       bits.push(`${activeStanding.name} is on a ${activeStanding.streak}-in-a-row hot streak.`);
     }
@@ -539,6 +586,48 @@ export class RoomManager {
       game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
       this.beginTurn(room);
     }, Math.max(2500, clip.durationMs + 1800));
+  }
+
+  /** At a peak, build + push a full themed showcase, extending the reveal to fit it. */
+  private async deliverShowcase(
+    room: Room,
+    turnId: number,
+    reason: ShowcaseReason,
+    headline: string,
+    song: { title: string | null; artist: string | null; year: number },
+  ): Promise<void> {
+    const game = room.game;
+    if (game === null) return;
+    if (reason !== "finale" && game.turnCounter !== turnId) return;
+
+    const view = await showcaseService.build({ reason, song, situation: this.describeSituation(room, game), headline });
+    if (view === null) {
+      if (reason !== "finale") void this.deliverEmcee(room, turnId); // fall back to the single line
+      return;
+    }
+    if (reason !== "finale" && (game.turnCounter !== turnId || game.active === null || game.active.phase !== "revealing")) {
+      return;
+    }
+
+    this.hooks.showcaseToHubs(room.code, view);
+    if (reason !== "finale") {
+      const total = view.cues.reduce((sum, cue) => sum + cue.durationMs, 0) + 4000;
+      if (game.revealTimer !== null) clearTimeout(game.revealTimer);
+      game.revealTimer = setTimeout(() => {
+        game.revealTimer = null;
+        game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+        this.beginTurn(room);
+      }, Math.max(SHOWCASE_FLOOR_MS, total));
+    }
+  }
+
+  private uniqueLeader(game: Game): string | null {
+    const sorted = [...game.teams].sort((a, b) => b.timeline.length - a.timeline.length);
+    const top = sorted[0];
+    if (top === undefined) return null;
+    const second = sorted[1];
+    if (second !== undefined && second.timeline.length === top.timeline.length) return null;
+    return top.teamId;
   }
 
   private beginTurn(room: Room): void {
