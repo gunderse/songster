@@ -10,12 +10,14 @@ const contexts: ShowcaseContext[] = [
     song: { title: "Take On Me", artist: "A-ha", year: 1985 },
     situation: "Score: Red 4, Blue 3 (first to 10). It's close.",
     headline: "Sam STOLE the card right out from under Red!",
+    outcome: "wrong",
   },
   {
     reason: "finale",
     song: { title: "Mr. Brightside", artist: "The Killers", year: 2003 },
     situation: "Score: Red 10, Blue 8 (first to 10).",
     headline: "Red win Songster!",
+    outcome: "correct",
   },
 ];
 

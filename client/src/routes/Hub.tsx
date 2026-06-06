@@ -7,6 +7,7 @@ import type { ShowcaseView } from "@songster/shared/game";
 import { audioStreamUrl } from "../api";
 import {
   audioUnlocked,
+  burstConfetti,
   fadeOutSnippet,
   playCues,
   playSfx,
@@ -18,6 +19,7 @@ import {
   stopSnippet,
   stopVoice,
   unlockAudio,
+  winConfetti,
 } from "../audio";
 import { HubGame } from "../components/HubGame";
 import { Roster } from "../components/Roster";
@@ -112,12 +114,15 @@ export function Hub({ code }: { code: string }) {
     if (sig !== null && sig !== lastResultRef.current) {
       lastResultRef.current = sig;
       fadeOutSnippet(2000);
-      playSfx(r!.correct ? "correct" : "wrong");
+      const won = r!.correct || r!.steal?.correct === true;
+      playSfx(won ? "correct" : "wrong");
+      if (won) burstConfetti();
     }
     if (game.winnerTeamId !== null && !wonRef.current) {
       wonRef.current = true;
       stopSnippet();
       playSfx("win");
+      winConfetti();
     }
   }, [room]);
 

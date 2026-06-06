@@ -83,10 +83,10 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
         <div className="text-center">
           <div className="text-sm text-slate-500">Your turn, {me.name}</div>
           <h1 className="text-2xl font-black">Where does it go?</h1>
-          <p className="text-sm text-slate-400">Listen on the big screen, then drop it on your timeline.</p>
+          <p className="text-sm text-slate-400">Listen on the big screen 🔊, then tap the spot where this song fits by year.</p>
         </div>
 
-        <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} />
+        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} />
 
         <div className="mt-auto flex flex-col gap-2">
           <button
@@ -99,7 +99,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
             }}
             className="rounded-xl bg-emerald-600 px-6 py-3 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
           >
-            {committed ? "Locked in…" : selectedSlot === null ? "Pick a spot" : "Place it here"}
+            {committed ? "Locked in…" : selectedSlot === null ? "Tap a spot above ↑" : "Lock it in"}
           </button>
           {!committed && me.tokens > 0 && (
             <button
@@ -135,7 +135,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
             Place it on YOUR timeline. If they're wrong and you're right, you take the card.
           </p>
         </div>
-        <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={stealSlot} onSelect={setStealSlot} />
+        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={stealSlot} onSelect={setStealSlot} accent="amber" />
         <div className="mt-auto flex flex-col gap-2">
           <button
             type="button"
@@ -147,7 +147,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
             }}
             className="rounded-xl bg-amber-600 px-6 py-3 text-lg font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
           >
-            {stealSlot === null ? "Pick a spot" : "Steal it here! (1 token)"}
+            {stealSlot === null ? "Tap a spot above ↑" : "Steal it here! (1 token)"}
           </button>
           <button
             type="button"
@@ -202,7 +202,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
       <div>
         <div className="mb-1 text-sm text-slate-500">Your team{myTeam !== null ? ` · ${myTeam.name}` : ""}</div>
-        <SlotTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={null} onSelect={() => undefined} readOnly />
+        <MiniTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} />
       </div>
 
       <Scoreboard room={room} />
@@ -210,43 +210,91 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   );
 }
 
-function SlotTimeline(props: {
+/**
+ * Vertical, explicitly-labeled placement picker (portrait-friendly).
+ * Oldest at the top → newest at the bottom; tap a labeled gap to choose where
+ * the mystery song belongs ("Before 1985", "Between 1985 and 1995", "After 1995").
+ */
+function TimelinePicker(props: {
   cards: TimelineCardView[];
   teamColor: string;
   selected: number | null;
   onSelect: (index: number) => void;
-  readOnly?: boolean;
+  accent?: "emerald" | "amber";
 }) {
-  const { cards, teamColor, selected, onSelect, readOnly = false } = props;
-  const slots = cards.length + 1;
+  const { cards, teamColor, selected, onSelect, accent = "emerald" } = props;
+  const selClass =
+    accent === "amber"
+      ? "border-amber-400 bg-amber-500/25 text-amber-100"
+      : "border-emerald-400 bg-emerald-500/25 text-emerald-100";
+
+  const gapLabel = (i: number): string => {
+    if (cards.length === 0) return "Place it here";
+    if (i === 0) return `Before ${cards[0]!.year}`;
+    if (i === cards.length) return `After ${cards[cards.length - 1]!.year}`;
+    return `Between ${cards[i - 1]!.year} & ${cards[i]!.year}`;
+  };
+
+  const rows: React.ReactNode[] = [];
+  for (let i = 0; i <= cards.length; i += 1) {
+    const isSel = selected === i;
+    rows.push(
+      <button
+        key={`gap-${i}`}
+        type="button"
+        onClick={() => onSelect(i)}
+        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-bold transition ${
+          isSel ? `${selClass} border-solid` : "border-dashed border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+        }`}
+      >
+        <span className="text-base">{isSel ? "✓" : "＋"}</span>
+        {gapLabel(i)}
+      </button>,
+    );
+    if (i < cards.length) {
+      const card = cards[i]!;
+      rows.push(
+        <div
+          key={`card-${card.songId}`}
+          className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2"
+          style={{ borderLeftColor: teamColor, borderLeftWidth: 4 }}
+        >
+          <div className="text-2xl font-black tabular-nums">{card.year}</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-slate-200">{card.title ?? "—"}</div>
+            {card.artist !== null && <div className="truncate text-xs text-slate-500">{card.artist}</div>}
+          </div>
+        </div>,
+      );
+    }
+  }
 
   return (
-    <div className="flex items-stretch gap-1 overflow-x-auto rounded-xl bg-slate-900/50 p-2">
-      {Array.from({ length: slots }).map((slotIndex, i) => (
-        <div key={`row-${i}`} className="flex items-stretch gap-1">
-          {!readOnly && (
-            <button
-              type="button"
-              onClick={() => onSelect(i)}
-              className={`w-7 shrink-0 rounded-md border border-dashed text-sm ${
-                selected === i ? "border-emerald-400 bg-emerald-500/20 text-emerald-300" : "border-slate-700 text-slate-600 hover:border-slate-500"
-              }`}
-            >
-              {selected === i ? "▾" : "+"}
-            </button>
-          )}
-          {i < cards.length && <Card card={cards[i]!} color={teamColor} />}
-        </div>
-      ))}
+    <div className="rounded-2xl bg-slate-900/50 p-3">
+      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+        <span>↑ Older</span>
+        <span className="text-slate-400">Tap where it fits</span>
+        <span>Newer ↓</span>
+      </div>
+      <div className="flex max-h-[52vh] flex-col gap-1.5 overflow-y-auto pr-1">{rows}</div>
     </div>
   );
 }
 
-function Card({ card, color }: { card: TimelineCardView; color: string }) {
+/** Compact read-only horizontal strip for reference (waiting view). */
+function MiniTimeline({ cards, teamColor }: { cards: TimelineCardView[]; teamColor: string }) {
   return (
-    <div className="flex w-20 shrink-0 flex-col items-center rounded-md border border-slate-700 bg-slate-800 p-2 text-center" style={{ borderTopColor: color, borderTopWidth: 3 }}>
-      <div className="text-lg font-black tabular-nums">{card.year}</div>
-      <div className="line-clamp-2 text-[10px] leading-tight text-slate-400">{card.title ?? ""}</div>
+    <div className="flex items-stretch gap-1 overflow-x-auto rounded-xl bg-slate-900/50 p-2">
+      {cards.map((card) => (
+        <div
+          key={card.songId}
+          className="flex w-20 shrink-0 flex-col items-center rounded-md border border-slate-700 bg-slate-800 p-2 text-center"
+          style={{ borderTopColor: teamColor, borderTopWidth: 3 }}
+        >
+          <div className="text-lg font-black tabular-nums">{card.year}</div>
+          <div className="line-clamp-2 text-[10px] leading-tight text-slate-400">{card.title ?? ""}</div>
+        </div>
+      ))}
     </div>
   );
 }

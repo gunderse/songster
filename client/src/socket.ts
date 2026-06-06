@@ -11,3 +11,8 @@ export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({
   reconnectionDelayMax: 2000,
   timeout: 5000,
 });
+
+// Dev-only handle for debugging from the console / preview.
+if (import.meta.env.DEV) {
+  (globalThis as unknown as { songsterSocket?: typeof socket }).songsterSocket = socket;
+}

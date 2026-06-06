@@ -16,6 +16,8 @@ export interface ShowcaseContext {
   situation: string;
   /** One line describing what just happened, e.g. "Blue STOLE the card from Red!" */
   headline: string;
+  /** Whether the placement was right — the cast opens by reacting to it. */
+  outcome: "correct" | "wrong";
 }
 
 interface ThemeConfig {
@@ -187,6 +189,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
   return [
     `Write a short, funny segment in the style of ${theme.promptStyle}.`,
     `React to this moment in a music-timeline party game: ${context.headline}`,
+    `The placing team guessed ${context.outcome === "correct" ? "CORRECTLY" : "WRONG"} — open the first cue by reacting to that.`,
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
     context.situation.length > 0 ? `Game state: ${context.situation}` : "",
     'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',

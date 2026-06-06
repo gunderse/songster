@@ -1,6 +1,27 @@
 // Hub audio: song-snippet playback (with fades) + zero-asset synthesized SFX.
 // The hub is the sole audio source during gameplay.
 
+import confetti from "canvas-confetti";
+
+/** Celebrate a correct placement — a quick burst from both lower corners. */
+export function burstConfetti(): void {
+  const opts = { particleCount: 70, spread: 70, startVelocity: 45, ticks: 200 } as const;
+  void confetti({ ...opts, origin: { x: 0.1, y: 0.9 }, angle: 60 });
+  void confetti({ ...opts, origin: { x: 0.9, y: 0.9 }, angle: 120 });
+}
+
+/** A longer celebratory shower for the winner's circle. */
+export function winConfetti(): void {
+  const end = Date.now() + 2600;
+  const colors = ["#fbbf24", "#34d399", "#60a5fa", "#f472b6", "#a78bfa"];
+  const frame = () => {
+    void confetti({ particleCount: 5, angle: 60, spread: 60, origin: { x: 0, y: 0.85 }, colors });
+    void confetti({ particleCount: 5, angle: 120, spread: 60, origin: { x: 1, y: 0.85 }, colors });
+    if (Date.now() < end) requestAnimationFrame(frame);
+  };
+  frame();
+}
+
 let ctx: AudioContext | null = null;
 let unlocked = false;
 let snippetEl: HTMLAudioElement | null = null;
@@ -195,14 +216,18 @@ const SFX = {
     { f: 330, d: 0.16, g: 0.07, o: 0.1 },
     { f: 523, d: 0.24, g: 0.08, o: 0.2 },
   ],
+  // Bright, unmistakable "ding-ding-ding!" rising major arpeggio.
   correct: [
-    { f: 523, d: 0.12, g: 0.06, o: 0 },
-    { f: 659, d: 0.12, g: 0.06, o: 0.1 },
-    { f: 784, d: 0.22, g: 0.06, o: 0.2 },
+    { f: 659, d: 0.13, g: 0.13, o: 0 },
+    { f: 880, d: 0.13, g: 0.13, o: 0.12 },
+    { f: 1046, d: 0.13, g: 0.13, o: 0.24 },
+    { f: 1318, d: 0.34, g: 0.15, o: 0.36 },
   ],
+  // Classic descending "wah-wah" buzzer — clearly a miss.
   wrong: [
-    { f: 180, d: 0.18, g: 0.06, t: "sawtooth" as OscillatorType, o: 0 },
-    { f: 120, d: 0.26, g: 0.05, t: "sawtooth" as OscillatorType, o: 0.12 },
+    { f: 233, d: 0.22, g: 0.12, t: "sawtooth" as OscillatorType, o: 0 },
+    { f: 196, d: 0.22, g: 0.12, t: "sawtooth" as OscillatorType, o: 0.2 },
+    { f: 155, d: 0.45, g: 0.13, t: "sawtooth" as OscillatorType, o: 0.4 },
   ],
   win: [
     { f: 392, d: 0.14, g: 0.07, o: 0 },

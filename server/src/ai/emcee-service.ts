@@ -16,6 +16,8 @@ export interface EmceeContext {
   placerName: string;
   /** Short human summary of the game state (standings, streaks, shutouts...), or "". */
   situation: string;
+  /** Whether the placement was right — the host opens by reacting to this. */
+  outcome: "correct" | "wrong";
 }
 
 export interface EmceeClip {
@@ -72,7 +74,7 @@ export class EmceeService {
       text = await this.generateLine(hostName, context);
     } catch (error) {
       logger.warn({ error: getErrorMessage(error) }, "emcee script failed; using template line");
-      text = fallbackLine(context.song);
+      text = fallbackLine(context);
     }
     logger.info({ hostName, text }, "emcee line scripted");
 
@@ -82,7 +84,7 @@ export class EmceeService {
         const clip = await voiceGeneratorService.generateClip(
           hostName,
           text,
-          `reveal-${context.song.year}-${(context.song.title ?? "song").slice(0, 32)}-${attempt}`,
+          `reveal-${context.outcome}-${context.song.year}-${(context.song.title ?? "song").slice(0, 32)}-${attempt}`,
         );
         return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text, hostName: clip.characterName };
       } catch (error) {
@@ -93,19 +95,22 @@ export class EmceeService {
   }
 
   private async generateLine(hostName: string, context: EmceeContext): Promise<string> {
-    const { song, situation } = context;
+    const { song, situation, teamName, placerName, outcome } = context;
     const characters = await voiceGeneratorService.listCharacters().catch(() => [] as VoiceCharacter[]);
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
 
+    const verdict =
+      outcome === "correct"
+        ? `${placerName} of team ${teamName} placed it CORRECTLY — celebrate the right call.`
+        : `${placerName} of team ${teamName} placed it WRONG — playfully rib them for the miss.`;
+
     const prompt = [
       `You are ${hostName}, a ${persona} host on a live music game show with rival teams.`,
-      `Reveal that the song "${song.title ?? "this track"}" by ${song.artist ?? "a mystery artist"} was released in ${song.year}.`,
-      `Make it entertaining: weave in ONE playful fun-fact or bit of trivia about the song, the artist, the year ${song.year}, or a movie/show it appeared in. Loose creative liberty is welcome.`,
-      situation.length > 0
-        ? `Current game state — work in a cheeky competitive jab only if it fits naturally: ${situation}`
-        : "",
-      "Stay fully in character. 1-2 short sentences, under 35 words total. State the year clearly. Output ONLY the spoken line — no quotes, markdown, or stage directions.",
+      `Open by reacting to the result: ${verdict}`,
+      `Then reveal "${song.title ?? "this track"}" by ${song.artist ?? "a mystery artist"} came out in ${song.year}, with ONE quick fun-fact about the song, artist, or year.`,
+      situation.length > 0 ? `Optional cheeky jab if it fits in a few words: ${situation}` : "",
+      "Keep it TIGHT and punchy: 2 short sentences, UNDER 28 words total. Start with the right/wrong reaction and state the year. Output ONLY the spoken line — no quotes, markdown, or stage directions.",
     ]
       .filter((line) => line.length > 0)
       .join("\n");
@@ -116,13 +121,15 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 280) : fallbackLine(song);
+    return line.length >= 3 ? line.slice(0, 280) : fallbackLine(context);
   }
 }
 
-function fallbackLine(song: EmceeSong): string {
+function fallbackLine(context: EmceeContext): string {
+  const { song, outcome, teamName } = context;
   const who = song.artist !== null ? ` by ${song.artist}` : "";
-  return `${song.title ?? "This one"}${who} — released in ${song.year}.`;
+  const verdict = outcome === "correct" ? `Correct, ${teamName}!` : `Not quite, ${teamName}!`;
+  return `${verdict} ${song.title ?? "This one"}${who} — released in ${song.year}.`;
 }
 
 export const emceeService = new EmceeService();

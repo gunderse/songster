@@ -30,6 +30,8 @@ const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 /** How long the reveal stays up before the next turn begins. */
 const REVEAL_MS = 5000;
+/** Max we'll wait at reveal for the (outcome-aware) emcee line before giving up. */
+const EMCEE_WAIT_MS = 11000;
 /** Floor for a showcase reveal before its cue durations are known. */
 const SHOWCASE_FLOOR_MS = 9000;
 
@@ -357,7 +359,7 @@ export class RoomManager {
     game.lastResult = null;
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
-    this.kickoffEmcee(room);
+    this.warmHost(room);
     return room;
   }
 
@@ -459,7 +461,7 @@ export class RoomManager {
       game.winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
       const winnerName = room.teams.find((t) => t.id === game.winnerTeamId)?.name ?? "The winners";
       this.finishGame(room);
-      void this.deliverShowcase(room, game.turnCounter, "finale", `${winnerName} win Songster!`, revealedSong);
+      void this.deliverShowcase(room, game.turnCounter, "finale", `${winnerName} win Songster!`, revealedSong, true);
       return room;
     }
 
@@ -478,21 +480,24 @@ export class RoomManager {
       headline = "Time for a check-in on the competition!";
     }
 
-    game.revealTimer = setTimeout(
-      () => {
-        game.revealTimer = null;
-        game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
-        this.beginTurn(room);
-      },
-      reason !== null ? SHOWCASE_FLOOR_MS : REVEAL_MS,
-    );
-
     if (reason !== null) {
-      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong);
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), SHOWCASE_FLOOR_MS);
+      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct);
     } else {
+      // Generate the host's line now that we know the outcome (so it opens with right/wrong),
+      // then deliver it — deliverEmcee owns the reveal timer.
+      game.active.emceePromise = this.generateEmcee(room, game.turnCounter, correct);
       void this.deliverEmcee(room, game.turnCounter);
     }
     return room;
+  }
+
+  private advanceTurn(room: Room): void {
+    const game = room.game;
+    if (game === null) return;
+    game.revealTimer = null;
+    game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
+    this.beginTurn(room);
   }
 
   private botPlace(room: Room, turnId: number): void {
@@ -506,14 +511,16 @@ export class RoomManager {
     this.resolvePlacement(room, placer.id, index);
   }
 
-  /** Start pre-generating the emcee's reveal line for the current song (during placement). */
-  private kickoffEmcee(room: Room): void {
+  /** Warm up host selection during placement so the reveal-time line generates fast. */
+  private warmHost(room: Room): void {
     const game = room.game;
-    if (game === null || game.active === null) return;
-    game.active.emceePromise = this.generateEmcee(room, game.turnCounter);
+    if (game === null) return;
+    if (game.hostName === undefined || game.hostName === null) {
+      game.hostPromise ??= emceeService.chooseHost();
+    }
   }
 
-  private async generateEmcee(room: Room, turnId: number): Promise<void> {
+  private async generateEmcee(room: Room, turnId: number, correct: boolean): Promise<void> {
     const game = room.game;
     if (game === null) return;
     // Pick the host once; if the voice API was down (null), retry on later turns.
@@ -523,20 +530,21 @@ export class RoomManager {
       game.hostPromise = undefined;
     }
     if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
-    const context = this.buildEmceeContext(room, game);
+    const context = this.buildEmceeContext(room, game, correct);
     const clip = await emceeService.revealClip(game.hostName, context);
     if (game.active !== null && game.turnCounter === turnId) {
       game.active.emceeClip = clip;
     }
   }
 
-  private buildEmceeContext(room: Room, game: Game): EmceeContext {
+  private buildEmceeContext(room: Room, game: Game, correct: boolean): EmceeContext {
     const active = game.active!;
     return {
       song: { title: active.song.title, artist: active.song.artist, year: active.song.year },
       teamName: room.teams.find((t) => t.id === active.teamId)?.name ?? "the team",
       placerName: room.players.get(active.placerId)?.name ?? "someone",
       situation: this.describeSituation(room, game),
+      outcome: correct ? "correct" : "wrong",
     };
   }
 
@@ -568,24 +576,24 @@ export class RoomManager {
     return bits.join(" ");
   }
 
-  /** At reveal, push the pre-generated voice line to the hubs and let it finish before advancing. */
+  /** At reveal, wait (bounded) for the host's line, push it to the hubs, then advance. */
   private async deliverEmcee(room: Room, turnId: number): Promise<void> {
     const game = room.game;
     if (game === null || game.active === null || game.turnCounter !== turnId) return;
-    if (game.active.emceeClip === null && game.active.emceePromise !== null) {
-      await Promise.race([game.active.emceePromise, delay(REVEAL_MS - 800)]);
+    if (game.active.emceePromise !== null) {
+      await Promise.race([game.active.emceePromise, delay(EMCEE_WAIT_MS)]);
     }
     if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "revealing") return;
-    const clip = game.active.emceeClip;
-    if (clip === null) return;
 
-    this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+    const clip = game.active.emceeClip;
     if (game.revealTimer !== null) clearTimeout(game.revealTimer);
-    game.revealTimer = setTimeout(() => {
-      game.revealTimer = null;
-      game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
-      this.beginTurn(room);
-    }, Math.max(2500, clip.durationMs + 1800));
+    if (clip !== null) {
+      this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(2500, clip.durationMs + 1800));
+    } else {
+      // No voice (services down or too slow) — the SFX + on-screen verdict carry it.
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), REVEAL_MS);
+    }
   }
 
   /** At a peak, build + push a full themed showcase, extending the reveal to fit it. */
@@ -595,14 +603,25 @@ export class RoomManager {
     reason: ShowcaseReason,
     headline: string,
     song: { title: string | null; artist: string | null; year: number },
+    correct: boolean,
   ): Promise<void> {
     const game = room.game;
     if (game === null) return;
     if (reason !== "finale" && game.turnCounter !== turnId) return;
 
-    const view = await showcaseService.build({ reason, song, situation: this.describeSituation(room, game), headline });
+    const view = await showcaseService.build({
+      reason,
+      song,
+      situation: this.describeSituation(room, game),
+      headline,
+      outcome: correct ? "correct" : "wrong",
+    });
     if (view === null) {
-      if (reason !== "finale") void this.deliverEmcee(room, turnId); // fall back to the single line
+      // Fall back to the single emcee line (also outcome-aware).
+      if (reason !== "finale" && game.active !== null && game.turnCounter === turnId) {
+        game.active.emceePromise = this.generateEmcee(room, turnId, correct);
+        void this.deliverEmcee(room, turnId);
+      }
       return;
     }
     if (reason !== "finale" && (game.turnCounter !== turnId || game.active === null || game.active.phase !== "revealing")) {
@@ -674,7 +693,7 @@ export class RoomManager {
     game.lastResult = null;
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
-    this.kickoffEmcee(room);
+    this.warmHost(room);
 
     if (placer.isBot) {
       const turnId = game.turnCounter;
