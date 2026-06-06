@@ -36,6 +36,10 @@ const EMCEE_WAIT_MS = 14000;
 const POST_REVEAL_MIN_MS = 4500;
 /** Floor for a showcase reveal before its cue durations are known. */
 const SHOWCASE_FLOOR_MS = 11000;
+/** Minimum "drumroll" before the result is shown, even when commentary is fast/cached. */
+const SUSPENSE_FLOOR_MS = 2200;
+/** Hard cap on the drumroll — if the voice never arrives, reveal anyway with SFX. */
+const SUSPENSE_MAX_MS = 9000;
 /** Pre-game countdown — gives late joiners a grace period before turn 1. */
 const COUNTDOWN_MS = 6000;
 
@@ -73,17 +77,26 @@ interface ActiveTurn {
   song: SampledSong;
   teamId: string;
   placerId: string;
-  phase: "placing" | "revealing";
+  phase: "placing" | "suspense" | "revealing";
   steal: { playerId: string; teamId: string; index: number } | null;
   snippetEndsAt: number;
   emceeClip: EmceeClip | null;
   emceePromise: Promise<void> | null;
+  /** Auto-resolve timer for the placer's clock; null if disabled. */
+  placeDeadline: number | null;
+  placeTimer: ReturnType<typeof setTimeout> | null;
   /** Track how far we've already played into the song for "Play More" continuations. */
   playedThroughS: number;
   /** Teammate suggestions for the placer (M8). */
   suggestions: Map<string, { teamId: string; index: number }>;
   /** True while the outcome-aware emcee/showcase line is being written + voiced. */
   commentaryPending: boolean;
+  /**
+   * Computed at placement time but withheld from clients during "suspense".
+   * Promoted to game.lastResult the moment the reveal voice is ready (or after
+   * the suspense floor), so the visual flip syncs with "Correct, Red!".
+   */
+  pendingResult: TurnResultView | null;
 }
 
 interface Game {
@@ -286,6 +299,7 @@ export class RoomManager {
         game.active.phase === "placing" &&
         game.active.placerId === found.player.id
       ) {
+        this.cancelPlaceTimer(game.active);
         if (game.revealTimer !== null) {
           clearTimeout(game.revealTimer);
           game.revealTimer = null;
@@ -415,12 +429,51 @@ export class RoomManager {
       playedThroughS: song.snippetStartS + lenS,
       suggestions: new Map(),
       commentaryPending: false,
+      pendingResult: null,
+      placeDeadline: null,
+      placeTimer: null,
     };
     game.lastResult = null;
+    this.armPlaceTimer(room);
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
     this.warmHost(room);
     return room;
+  }
+
+  /** Schedule the auto-resolve timer for the active placer (no-op if disabled). */
+  private armPlaceTimer(room: Room): void {
+    const game = room.game;
+    if (game === null || game.active === null) return;
+    this.cancelPlaceTimer(game.active);
+    const turnTimerS = room.config.turnTimerS ?? 0;
+    if (turnTimerS <= 0) return;
+    const placer = room.players.get(game.active.placerId);
+    if (placer === undefined || placer.isBot) return; // bots have their own delay
+    const ms = turnTimerS * 1000;
+    game.active.placeDeadline = Date.now() + ms;
+    const turnId = game.turnCounter;
+    game.active.placeTimer = setTimeout(() => this.autoResolveTurn(room, turnId), ms);
+  }
+
+  private cancelPlaceTimer(active: ActiveTurn): void {
+    if (active.placeTimer !== null) {
+      clearTimeout(active.placeTimer);
+      active.placeTimer = null;
+    }
+    active.placeDeadline = null;
+  }
+
+  /** Time's up: resolve at index 0 (a guess is a guess). */
+  private autoResolveTurn(room: Room, turnId: number): void {
+    const game = room.game;
+    if (game === null || game.active === null || game.turnCounter !== turnId) return;
+    if (game.active.phase !== "placing") return;
+    const placerId = game.active.placerId;
+    // Pick the placer's leftmost-suggested gap if any teammate suggested, else 0.
+    const suggestions = [...game.active.suggestions.values()];
+    const fallbackIndex = suggestions.length > 0 ? suggestions[0]!.index : 0;
+    this.resolvePlacement(room, placerId, fallbackIndex);
   }
 
   /** Any player can re-play the snippet on the hub, once the current play finishes. */
@@ -467,6 +520,9 @@ export class RoomManager {
     const team = game.teams.find((t) => t.teamId === game.active!.teamId);
     if (team === undefined) return room;
 
+    // Lock in: kill the turn timer so a slow late-arriving placement still counts.
+    this.cancelPlaceTimer(game.active);
+
     const slot = Math.max(0, Math.min(index, team.timeline.length));
     const song = game.active.song;
     const placerName = room.players.get(playerId)?.name ?? "—";
@@ -497,7 +553,10 @@ export class RoomManager {
       };
     }
 
-    game.lastResult = {
+    // The result is COMPUTED now but WITHHELD until the suspense lifts and the
+    // host's voice is ready (or we hit the suspense ceiling). lastResult stays
+    // null while phase === "suspense" so clients can't peek at the year/title.
+    const pendingResult: TurnResultView = {
       teamId: team.teamId,
       placerId: playerId,
       placerName,
@@ -506,7 +565,9 @@ export class RoomManager {
       song: { songId: song.songId, year: song.year, title: song.title, artist: song.artist, hasArt: song.hasArt },
       steal: stealResult,
     };
-    game.active.phase = "revealing";
+    game.active.pendingResult = pendingResult;
+    game.active.phase = "suspense";
+    game.active.commentaryPending = true;
     this.hooks.broadcast(room.code);
 
     const revealedSong = { title: song.title, artist: song.artist, year: song.year };
@@ -517,19 +578,19 @@ export class RoomManager {
     const leadChanged = newLeader !== null && game.leaderTeamId !== null && newLeader !== game.leaderTeamId;
     if (newLeader !== null) game.leaderTeamId = newLeader;
 
-    if (placerWon || stealWonTeamId !== null) {
-      game.winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
-      const winnerName = room.teams.find((t) => t.id === game.winnerTeamId)?.name ?? "The winners";
-      this.finishGame(room);
-      void this.deliverShowcase(room, game.turnCounter, "finale", `${winnerName} win Songster!`, revealedSong, true);
-      return room;
-    }
+    // Stash the winner trigger but DON'T promote to winnerTeamId yet — we want the
+    // drumroll + voiced reveal to land before the winner screen takes over.
+    const triggersWin = placerWon || stealWonTeamId !== null;
+    const winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
 
     // Pick the reveal "outro": a full showcase at peaks, else the single emcee line.
     const teamName = room.teams.find((t) => t.id === team.teamId)?.name ?? "the team";
-    let reason: ShowcaseReason | null = null;
+    let reason: ShowcaseReason | null = triggersWin ? "finale" : null;
     let headline = "";
-    if (stealResult?.correct === true) {
+    if (reason === "finale") {
+      const winnerName = room.teams.find((t) => t.id === winnerTeamId)?.name ?? "The winners";
+      headline = `${winnerName} win Songster!`;
+    } else if (stealResult?.correct === true) {
       reason = "steal";
       headline = `${stealResult.playerName} STOLE the card right out from under ${teamName}!`;
     } else if (leadChanged) {
@@ -540,21 +601,37 @@ export class RoomManager {
       headline = "Time for a check-in on the competition!";
     }
 
-    // Mark commentary as pending so hubs/phones can show a "writing…" indicator
-    // (avoids the awkward silent gap while Ollama+Voice work).
-    game.active.commentaryPending = true;
-    this.hooks.broadcast(room.code);
+    const promoteWinner = (): void => {
+      if (triggersWin && winnerTeamId !== null && room.game !== null) {
+        room.game.winnerTeamId = winnerTeamId;
+      }
+    };
 
     if (reason !== null) {
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), SHOWCASE_FLOOR_MS);
-      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct);
+      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct, promoteWinner);
     } else {
       // Generate the host's line now that we know the outcome (so it opens with right/wrong),
       // then deliver it — deliverEmcee owns the reveal timer.
       game.active.emceePromise = this.generateEmcee(room, game.turnCounter, correct);
-      void this.deliverEmcee(room, game.turnCounter);
+      void this.deliverEmcee(room, game.turnCounter, promoteWinner);
     }
     return room;
+  }
+
+  /**
+   * Lift the suspense: expose the result, flip phase to "revealing", and
+   * broadcast — so the visual ✅/❌/year flip syncs with the voice + SFX.
+   * Returns true if we actually transitioned (idempotent on repeat calls).
+   */
+  private revealNow(room: Room, turnId: number): boolean {
+    const game = room.game;
+    if (game === null || game.active === null || game.turnCounter !== turnId) return false;
+    if (game.active.phase !== "suspense") return false;
+    game.lastResult = game.active.pendingResult;
+    game.active.phase = "revealing";
+    game.active.commentaryPending = false;
+    this.hooks.broadcast(room.code);
+    return true;
   }
 
   private advanceTurn(room: Room): void {
@@ -641,31 +718,45 @@ export class RoomManager {
     return bits.join(" ");
   }
 
-  /** At reveal, wait (bounded) for the host's line, push it to the hubs, then advance. */
-  private async deliverEmcee(room: Room, turnId: number): Promise<void> {
+  /**
+   * Hold the drumroll until the host's line is ready (or the ceiling is hit),
+   * then lift the suspense (revealNow) IN SYNC with starting the voice so the
+   * ✅/❌/year flip lands at the same moment the host says "Correct, Red!".
+   */
+  private async deliverEmcee(room: Room, turnId: number, onReveal?: () => void): Promise<void> {
     const game = room.game;
     if (game === null || game.active === null || game.turnCounter !== turnId) return;
+
+    // Race the host's clip against the SUSPENSE_MAX ceiling, and enforce a
+    // SUSPENSE_FLOOR so even instantly-cached lines still get a beat of drumroll.
+    const placedAt = Date.now();
     if (game.active.emceePromise !== null) {
-      await Promise.race([game.active.emceePromise, delay(EMCEE_WAIT_MS)]);
+      await Promise.race([game.active.emceePromise, delay(SUSPENSE_MAX_MS)]);
     }
-    if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "revealing") return;
+    const drumrolled = Date.now() - placedAt;
+    if (drumrolled < SUSPENSE_FLOOR_MS) await delay(SUSPENSE_FLOOR_MS - drumrolled);
+
+    if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "suspense") return;
 
     const clip = game.active.emceeClip;
-    game.active.commentaryPending = false;
+    onReveal?.();
+    this.revealNow(room, turnId); // promotes pendingResult → lastResult, phase → revealing, broadcast
+
     if (game.revealTimer !== null) clearTimeout(game.revealTimer);
     if (clip !== null) {
       this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
-      // Always hold the reveal at least POST_REVEAL_MIN_MS so the audience can absorb
-      // ✅/❌ + SFX even when bots place fast or the voice is cached/short.
       game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
     } else {
       // No voice (services down or too slow) — the SFX + on-screen verdict carry it.
       game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
     }
-    this.hooks.broadcast(room.code);
   }
 
-  /** At a peak, build + push a full themed showcase, extending the reveal to fit it. */
+  /**
+   * At a peak, build + push a full themed showcase. Like deliverEmcee, this
+   * holds the drumroll until the cues are ready, then lifts the suspense in
+   * sync with starting the showcase audio so the verdict lands on cue.
+   */
   private async deliverShowcase(
     room: Room,
     turnId: number,
@@ -673,11 +764,13 @@ export class RoomManager {
     headline: string,
     song: { title: string | null; artist: string | null; year: number },
     correct: boolean,
+    onReveal?: () => void,
   ): Promise<void> {
     const game = room.game;
     if (game === null) return;
     if (reason !== "finale" && game.turnCounter !== turnId) return;
 
+    const placedAt = Date.now();
     const view = await showcaseService.build({
       reason,
       song,
@@ -685,29 +778,36 @@ export class RoomManager {
       headline,
       outcome: correct ? "correct" : "wrong",
     });
+
+    // Honour the suspense floor — but cap so a slow showcase can't stall forever.
+    const built = Date.now() - placedAt;
+    if (built < SUSPENSE_FLOOR_MS) await delay(SUSPENSE_FLOOR_MS - built);
+
+    if (game.turnCounter !== turnId) return;
+
     if (view === null) {
-      // Fall back to the single emcee line (also outcome-aware).
-      if (reason !== "finale" && game.active !== null && game.turnCounter === turnId) {
+      // Fall back to the single emcee line (also outcome-aware) — that path
+      // owns its own suspense floor, so it'll still land in sync.
+      if (game.active !== null) {
         game.active.emceePromise = this.generateEmcee(room, turnId, correct);
-        void this.deliverEmcee(room, turnId);
+        void this.deliverEmcee(room, turnId, onReveal);
       }
       return;
     }
-    if (reason !== "finale" && (game.turnCounter !== turnId || game.active === null || game.active.phase !== "revealing")) {
-      return;
-    }
+    if (reason !== "finale" && (game.active === null || game.active.phase !== "suspense")) return;
 
-    if (game.active !== null) game.active.commentaryPending = false;
+    onReveal?.();
+    this.revealNow(room, turnId);
+
     this.hooks.showcaseToHubs(room.code, view);
-    this.hooks.broadcast(room.code);
     if (reason !== "finale") {
       const total = view.cues.reduce((sum, cue) => sum + cue.durationMs, 0) + 4000;
       if (game.revealTimer !== null) clearTimeout(game.revealTimer);
-      game.revealTimer = setTimeout(() => {
-        game.revealTimer = null;
-        game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
-        this.beginTurn(room);
-      }, Math.max(SHOWCASE_FLOOR_MS, total));
+      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(SHOWCASE_FLOOR_MS, total));
+    } else {
+      // Finale: the winner screen now takes over (game.winnerTeamId was
+      // promoted by onReveal). The showcase plays over it; no advanceTurn.
+      this.finishGame(room);
     }
   }
 
@@ -763,8 +863,12 @@ export class RoomManager {
       playedThroughS: song.snippetStartS + lenS,
       suggestions: new Map(),
       commentaryPending: false,
+      pendingResult: null,
+      placeDeadline: null,
+      placeTimer: null,
     };
     game.lastResult = null;
+    this.armPlaceTimer(room);
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
     this.warmHost(room);
@@ -778,6 +882,7 @@ export class RoomManager {
   private finishGame(room: Room): void {
     const game = room.game;
     if (game !== null) {
+      if (game.active !== null) this.cancelPlaceTimer(game.active);
       if (game.revealTimer !== null) {
         clearTimeout(game.revealTimer);
         game.revealTimer = null;
@@ -856,6 +961,7 @@ export class RoomManager {
               playerName: room.players.get(playerId)?.name ?? "—",
               index: s.index,
             })),
+            placeDeadline: game.active.placeDeadline,
           };
 
     return {

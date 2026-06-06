@@ -99,8 +99,11 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     (db.prepare("SELECT file_path FROM songs").all() as Array<{ file_path: string }>).map((row) => row.file_path),
   );
 
-  // Refresh tag-derived columns on conflict, but preserve curation outputs
-  // (year, status, snippet_start_s) and keep existing art if none was found.
+  // Refresh tag-derived columns on conflict, but PRESERVE everything the curator
+  // has touched (year, status, snippet_start_s, AND title/artist/album — those
+  // are inline-editable in /library and must survive a re-scan). Tag-only
+  // metadata (genre/raw_year/duration) and the suspicious-flag set are
+  // recomputed; art is only set if the file gained embedded art.
   const upsert = db.prepare(`
     INSERT INTO songs (
       id, file_path, title, artist, album, genre, tag_genre,
@@ -112,9 +115,6 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
       @art_path, 'unreviewed', @suspicious_flags, @now, @now
     )
     ON CONFLICT(file_path) DO UPDATE SET
-      title = excluded.title,
-      artist = excluded.artist,
-      album = excluded.album,
       genre = excluded.genre,
       tag_genre = excluded.tag_genre,
       raw_year = excluded.raw_year,

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { motion } from "framer-motion";
+
 import type { TimelineCardView } from "@songster/shared/game";
 import type { RoomState } from "@songster/shared/room";
 
@@ -60,14 +62,43 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   const placerName = active !== null ? room.players.find((p) => p.id === active.placerId)?.name ?? "—" : "";
   const activeTeam = active !== null ? room.teams.find((t) => t.id === active.teamId) : null;
 
-  // ── reveal (everyone sees the result) ─────────────────────────────────
-  if (active !== null && active.phase === "revealing" && result !== null) {
+  // ── suspense (everyone holds breath; the year is hidden until reveal) ──
+  if (active !== null && active.phase === "suspense") {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100">
-        <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
-        <div className="text-7xl font-black tabular-nums">{result.song.year}</div>
-        <div className="text-xl font-semibold">{result.song.title ?? "Unknown"}</div>
-        <div className="text-slate-400">{result.song.artist ?? ""}</div>
+        <motion.div
+          animate={{ scale: [1, 1.1, 1], rotate: [-3, 3, -3] }}
+          transition={{ scale: { duration: 0.5, repeat: Infinity }, rotate: { duration: 0.18, repeat: Infinity } }}
+          className="text-7xl"
+        >
+          🥁
+        </motion.div>
+        <div className="text-2xl font-black text-amber-300">Drumroll please…</div>
+        <p className="text-slate-300">
+          Did <span className="font-semibold" style={{ color: activeTeam?.color }}>{result?.placerName ?? active.placerName}</span> get it right?
+        </p>
+      </main>
+    );
+  }
+
+  // ── reveal (everyone sees the result with an animated flip) ──────────
+  if (active !== null && active.phase === "revealing" && result !== null) {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100" style={{ perspective: 1000 }}>
+        <motion.div
+          initial={{ rotateY: 180, scale: 0.9 }}
+          animate={{ rotateY: 0, scale: 1 }}
+          transition={{ type: "spring", stiffness: 100, damping: 14 }}
+          style={{ transformStyle: "preserve-3d" }}
+          className="flex flex-col items-center gap-2 rounded-2xl border-2 bg-slate-900/80 px-8 py-6"
+          // eslint-disable-next-line react/forbid-dom-props
+          // border colour matches the verdict
+        >
+          <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
+          <div className="text-7xl font-black tabular-nums">{result.song.year}</div>
+          <div className="text-xl font-semibold">{result.song.title ?? "Unknown"}</div>
+          <div className="text-slate-400">{result.song.artist ?? ""}</div>
+        </motion.div>
         <p className="mt-2 text-sm" style={{ color: result.correct ? "#34d399" : "#fb7185" }}>
           {result.placerName} {result.correct ? "nailed it" : "missed"} for {activeTeam?.name}
         </p>
@@ -83,12 +114,14 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── my turn to place ──────────────────────────────────────────────────
   if (amPlacer && active.phase === "placing") {
     const suggestions = active.suggestions ?? [];
+    const deadlineMs = active.placeDeadline !== null ? Math.max(0, active.placeDeadline - now) : null;
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
         <div className="text-center">
           <div className="text-sm text-slate-500">Your turn, {me.name}</div>
           <h1 className="text-2xl font-black">Where does it go?</h1>
           <p className="text-sm text-slate-400">Listen on the big screen 🔊, then tap the spot where this song fits by year.</p>
+          {deadlineMs !== null && <TurnClock msLeft={deadlineMs} />}
         </div>
 
         <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#64748b"} onUse={(i) => setSelectedSlot(i)} />
@@ -395,6 +428,21 @@ function Scoreboard({ room }: { room: RoomState }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Compact "time left" pill — turns urgent when under 10s. */
+function TurnClock({ msLeft }: { msLeft: number }) {
+  const s = Math.ceil(msLeft / 1000);
+  const urgent = s <= 10;
+  return (
+    <div
+      className={`mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-bold tabular-nums ${
+        urgent ? "bg-rose-500/20 text-rose-300" : "bg-slate-800 text-slate-300"
+      }`}
+    >
+      ⏱ {s}s {urgent && s > 0 && <span className="text-xs font-normal opacity-80">— time's running out!</span>}
     </div>
   );
 }

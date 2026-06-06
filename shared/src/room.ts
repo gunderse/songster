@@ -19,6 +19,8 @@ export const roomConfigSchema = z.object({
   tokensPerPlayer: z.number().int().min(0).max(5).default(2),
   snippetLenS: z.number().int().min(5).max(60).default(30),
   teamCount: z.number().int().min(2).max(4).default(2),
+  /** Per-turn timer (s). 0 disables the auto-resolve. */
+  turnTimerS: z.number().int().min(0).max(180).default(45),
   deck: deckFilterSchema.default({}),
 });
 export type RoomConfig = z.infer<typeof roomConfigSchema>;

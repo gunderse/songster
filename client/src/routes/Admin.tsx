@@ -18,6 +18,7 @@ export function Admin() {
   const [targetLength, setTargetLength] = useState(7);
   const [tokens, setTokens] = useState(2);
   const [snippetLen, setSnippetLen] = useState(30);
+  const [turnTimer, setTurnTimer] = useState(45);
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
 
@@ -36,6 +37,7 @@ export function Admin() {
       targetLength,
       tokensPerPlayer: tokens,
       snippetLenS: snippetLen,
+      turnTimerS: turnTimer,
       deck: { genres: genres.length > 0 ? genres : undefined, tags: tags.length > 0 ? tags : undefined },
     };
     if (!socket.connected) socket.connect();
@@ -51,11 +53,12 @@ export function Admin() {
         <h1 className="text-2xl font-black">🎛️ Songster · Admin</h1>
         <p className="mt-1 text-slate-400">Create a game room.</p>
 
-        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <NumberField label="Teams" value={teamCount} min={2} max={4} onChange={setTeamCount} />
           <NumberField label="Win at" value={targetLength} min={3} max={20} onChange={setTargetLength} />
           <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
           <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
+          <NumberField label="Turn timer s (0=off)" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
         </div>
 
         <Section title="Deck filter (optional)" hint="Restrict the song pool by genre / tag. Leave empty for all approved songs.">

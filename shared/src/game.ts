@@ -18,7 +18,12 @@ export interface ActiveTurnView {
   placerId: string;
   placerName: string;
   placerIsBot: boolean;
-  phase: "placing" | "revealing";
+  /**
+   * placing → the placer is choosing.
+   * suspense → they locked in; "drumroll" while the host writes + starts speaking. Year is hidden.
+   * revealing → result is shown (correctness/year/title/art) in sync with the voice.
+   */
+  phase: "placing" | "suspense" | "revealing";
   snippetLenS: number;
   /** ms-epoch when the current snippet finishes; replay is disabled until then. */
   snippetPlayingUntil: number;
@@ -26,6 +31,8 @@ export interface ActiveTurnView {
   steal: { teamId: string; playerName: string } | null;
   /** Non-binding teammate suggestions for the placer (M8). */
   suggestions: Array<{ playerId: string; playerName: string; index: number }>;
+  /** ms-epoch the placer's clock runs out (auto-resolve). null = no timer. */
+  placeDeadline: number | null;
 }
 
 export interface RevealedSong {
