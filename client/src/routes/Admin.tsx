@@ -270,6 +270,7 @@ function PlexSettingsForm() {
     setPinCode(null);
     setPinId(null);
     try {
+      await savePlexSettings(url, libraryName);
       const pin = await requestPlexPin();
       setPinCode(pin.code);
       setPinId(pin.pinId);

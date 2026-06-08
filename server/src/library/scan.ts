@@ -266,7 +266,7 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
   const plexLibraryNameEnv = process.env.SONGSTER_PLEX_LIBRARY_NAME?.trim() || "";
   const plexScanLimitEnv = process.env.SONGSTER_PLEX_SCAN_LIMIT?.trim() || "";
 
-  const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "");
+  const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "http://192.168.86.100:32400");
   const plexToken = plexTokenEnv || getSetting(db, "plex_token", "");
   const plexLibraryName = plexLibraryNameEnv || getSetting(db, "plex_library_name", "Music");
   const plexScanLimit = plexScanLimitEnv ? Number(plexScanLimitEnv) : Number(getSetting(db, "plex_scan_limit", "100"));

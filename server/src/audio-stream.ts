@@ -41,7 +41,7 @@ export function registerAudioRoutes(app: Express, db: DatabaseType.Database): vo
       const plexUrlEnv = process.env.SONGSTER_PLEX_URL?.trim() || "";
       const plexTokenEnv = process.env.SONGSTER_PLEX_TOKEN?.trim() || "";
       
-      const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "");
+      const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "http://192.168.86.100:32400");
       const plexToken = plexTokenEnv || getSetting(db, "plex_token", "");
 
       if (plexUrl.length === 0 || plexToken.length === 0) {
