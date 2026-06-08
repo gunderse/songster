@@ -16,10 +16,12 @@ export async function getPlexPin(clientIdentifier: string): Promise<{ pinId: num
       method: "POST",
       headers: {
         "Accept": "application/json",
+        "Content-Type": "application/json",
         "X-Plex-Product": "Songster",
         "X-Plex-Version": "1.0.0",
         "X-Plex-Client-Identifier": clientIdentifier,
       },
+      body: JSON.stringify({ strong: true }),
     });
 
     if (!response.ok) {
@@ -43,6 +45,7 @@ export async function checkPlexPin(pinId: string, clientIdentifier: string): Pro
       method: "GET",
       headers: {
         "Accept": "application/json",
+        "Content-Type": "application/json",
         "X-Plex-Client-Identifier": clientIdentifier,
       },
     });
