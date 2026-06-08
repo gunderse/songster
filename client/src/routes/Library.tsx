@@ -135,12 +135,16 @@ export function Library() {
   );
 
   return (
-    <div className="min-h-dvh bg-slate-950 text-slate-100">
+    <div className="relative min-h-dvh bg-slate-950 text-slate-100 overflow-x-hidden">
+      {/* Ambient glassmorphic glowing backdrops */}
+      <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
+      <div className="absolute top-[30%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/5 blur-[100px] pointer-events-none" />
+
       <audio ref={audioRef} onEnded={stopPreview} className="hidden" />
 
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur px-5 py-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-          <h1 className="text-xl font-black tracking-tight">🎵 Songster · Library</h1>
+      <header className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur-md px-6 py-4 shadow-md">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <h1 className="text-2xl font-black tracking-tight font-heading text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-indigo-400">🎵 Songster · Library</h1>
           {stats !== null && <StatBar stats={stats} />}
           <div className="ml-auto flex items-center gap-3">
             <AiPill ai={ai} />
@@ -156,14 +160,14 @@ export function Library() {
                 }
               }}
               disabled={busy === "scan"}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-sm font-medium hover:bg-slate-800 disabled:opacity-50"
+              className="rounded-xl border border-white/10 bg-slate-900 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40 transition"
             >
-              {busy === "scan" ? "Rescanning…" : "Rescan folder"}
+              {busy === "scan" ? "Rescanning…" : "Rescan library"}
             </button>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
           <Segmented<StatusFilter>
             value={status}
             onChange={setStatus}
@@ -174,33 +178,33 @@ export function Library() {
               ["excluded", "Excluded"],
             ]}
           />
-          <label className="flex items-center gap-1.5 rounded-md border border-slate-700 px-2.5 py-1.5">
-            <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} />
-            Flagged only
+          <label className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 cursor-pointer hover:border-slate-850 hover:bg-slate-900 transition">
+            <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
+            <span className="font-semibold text-slate-350">Flagged only</span>
           </label>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search title / artist / album…"
-            className="min-w-56 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-1.5 outline-none focus:border-indigo-500"
+            className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
           />
           <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
           <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5"
+            className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-300 outline-none focus:border-indigo-500 transition cursor-pointer"
           >
             <option value="flagged">Sort: needs review</option>
             <option value="title">Sort: title</option>
             <option value="artist">Sort: artist</option>
             <option value="year">Sort: year</option>
           </select>
-          <span className="text-slate-500">{loading ? "loading…" : `${songs.length} shown`}</span>
+          <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl divide-y divide-slate-800/70 px-3 pb-24">
+      <main className="relative z-10 mx-auto max-w-5xl divide-y divide-slate-900/50 px-4 pb-24">
         {songs.map((song) => (
           <SongRow
             key={song.id}
@@ -410,6 +414,11 @@ function SongRow(props: {
             value={year}
             onChange={(e) => setYear(e.target.value)}
             onBlur={commitYear}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
             inputMode="numeric"
             placeholder="—"
             className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-indigo-500"
@@ -421,6 +430,11 @@ function SongRow(props: {
             value={start}
             onChange={(e) => setStart(e.target.value)}
             onBlur={commitStart}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
             inputMode="numeric"
             placeholder="—"
             className="w-14 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm outline-none focus:border-indigo-500"
@@ -439,7 +453,20 @@ function SongRow(props: {
           <div className="flex gap-1">
             <button
               type="button"
-              onClick={() => onPatch({ status: "approved" })}
+              onClick={() => {
+                const update: SongUpdate = { status: "approved" };
+                const trimmedYear = year.trim();
+                const nextYear = trimmedYear === "" ? null : Number(trimmedYear);
+                if (nextYear !== song.year) {
+                  update.year = nextYear;
+                }
+                const trimmedStart = start.trim();
+                const nextStart = trimmedStart === "" ? null : Number(trimmedStart);
+                if (nextStart !== song.snippetStartS) {
+                  update.snippetStartS = nextStart;
+                }
+                void onPatch(update);
+              }}
               disabled={busy}
               className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold hover:bg-emerald-500 disabled:opacity-50"
             >
@@ -447,7 +474,20 @@ function SongRow(props: {
             </button>
             <button
               type="button"
-              onClick={() => onPatch({ status: "excluded" })}
+              onClick={() => {
+                const update: SongUpdate = { status: "excluded" };
+                const trimmedYear = year.trim();
+                const nextYear = trimmedYear === "" ? null : Number(trimmedYear);
+                if (nextYear !== song.year) {
+                  update.year = nextYear;
+                }
+                const trimmedStart = start.trim();
+                const nextStart = trimmedStart === "" ? null : Number(trimmedStart);
+                if (nextStart !== song.snippetStartS) {
+                  update.snippetStartS = nextStart;
+                }
+                void onPatch(update);
+              }}
               disabled={busy}
               className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
             >

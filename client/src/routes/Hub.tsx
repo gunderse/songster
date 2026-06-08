@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion } from "framer-motion";
 
 import QRCode from "qrcode";
 
@@ -161,22 +162,25 @@ export function Hub({ code }: { code: string }) {
   const canStart = inLobby && playerCount >= 1; // at least one player; teams auto-balance
 
   return (
-    <main className="relative min-h-dvh bg-slate-950 p-6 text-slate-100 sm:p-10">
-      {/* Small, non-obscuring audio-unlock banner (so the QR + code stay readable). */}
+    <main className="relative min-h-dvh overflow-hidden bg-slate-950 p-6 text-slate-100 sm:p-10">
+      {/* Glowing glassmorphic ambient backdrops */}
+      <div className="absolute top-[-20%] left-[-20%] h-[70%] w-[70%] rounded-full bg-indigo-500/5 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-20%] h-[70%] w-[70%] rounded-full bg-purple-600/5 blur-[120px] pointer-events-none" />
+
+      {/* Small, non-obscuring audio-unlock banner */}
       {!audioReady && (
         <button
           type="button"
           onClick={() => {
             unlockAudio();
             setAudioReady(true);
-            // If a snippet is already mid-play (game started before this tap), play it now.
             const pending = pendingSnippetRef.current;
             if (pending !== null && pending.until > Date.now()) {
               playSnippet(pending.url, pending.startS, pending.lenS);
               setAudioFor(pending.lenS * 1000);
             }
           }}
-          className="fixed bottom-6 right-6 z-40 rounded-full bg-indigo-500 px-5 py-3 text-sm font-bold text-white shadow-2xl shadow-indigo-500/30 hover:bg-indigo-400"
+          className="fixed bottom-6 right-6 z-40 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-bold text-white shadow-[0_0_30px_rgba(99,102,241,0.4)] hover:scale-105 active:scale-95 transition"
         >
           🔊 Tap to enable audio
         </button>
@@ -184,19 +188,19 @@ export function Hub({ code }: { code: string }) {
 
       {showcase !== null && <ShowcaseOverlay view={showcase} cueIndex={showcaseCue} />}
 
-      {/* Pre-game countdown overlay so players know the show's about to start. */}
+      {/* Pre-game countdown overlay */}
       {countdownEndsAt !== null && <Countdown endsAt={countdownEndsAt} />}
 
-      <div className="mx-auto max-w-6xl">
+      <div className="relative z-10 mx-auto max-w-6xl">
         {inLobby ? (
           <LobbyView code={code} qr={qr} room={room} canStart={canStart} playerCount={playerCount} />
         ) : (
           <>
-            <div className="mb-6 flex items-center justify-between text-slate-500">
-              <span className="text-sm uppercase tracking-[0.3em]">Songster</span>
+            <div className="mb-6 flex items-center justify-between text-slate-500 border-b border-slate-900 pb-4">
+              <span className="text-xs font-bold uppercase tracking-[0.4em] bg-clip-text bg-gradient-to-r from-slate-400 to-slate-600">Songster · The Theater</span>
               <span className="flex items-center gap-3">
                 <Waveform active={audioActive} />
-                <span className="font-mono text-lg tracking-widest text-slate-400">{code}</span>
+                <span className="font-mono text-lg font-bold tracking-widest text-indigo-400 bg-indigo-950/40 border border-indigo-900/40 rounded-lg px-3 py-1 shadow-inner">{code}</span>
               </span>
             </div>
             <HubGame room={room} emcee={emcee} commentaryPending={commentaryPending} />
@@ -221,73 +225,82 @@ function LobbyView({
   playerCount: number;
 }) {
   return (
-    <>
-      <div className="grid items-start gap-8 md:grid-cols-[1.2fr_1fr]">
+    <div className="flex flex-col gap-6">
+      <div className="grid items-center gap-8 md:grid-cols-[1.3fr_1fr] bg-slate-900/40 border border-white/5 rounded-3xl p-8 backdrop-blur-md">
         <div>
-          <div className="text-sm uppercase tracking-[0.3em] text-slate-500">Join the show</div>
-          <div className="mt-1 leading-none tracking-[0.18em] text-indigo-300" style={{ fontSize: "min(20vw, 12rem)", fontWeight: 900 }}>
+          <div className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Join the show</div>
+          <div 
+            className="mt-1 leading-none tracking-[0.1em] text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 font-black font-heading" 
+            style={{ fontSize: "min(16vw, 9.5rem)", textShadow: "0 0 40px rgba(99,102,241,0.1)" }}
+          >
             {code}
           </div>
-          <div className="mt-4 text-lg text-slate-400">
-            On your phone, go to <span className="font-semibold text-slate-200">{window.location.host}</span> and enter <span className="font-bold text-indigo-300">{code}</span>
+          <div className="mt-4 text-base text-slate-400 leading-relaxed">
+            Open the browser on your phone, navigate to <span className="font-semibold text-slate-200 border-b border-indigo-500/30 pb-0.5">{window.location.host}</span>, and enter the code <span className="font-black text-indigo-300 bg-indigo-950/50 rounded px-1.5 py-0.5">{code}</span>
           </div>
         </div>
         {qr !== null && (
-          <div className="justify-self-center rounded-3xl bg-white p-4 shadow-2xl md:justify-self-end">
-            <img src={qr} alt={`Join ${code}`} className="h-auto w-full max-w-[360px]" />
-            <div className="mt-2 text-center text-sm font-semibold text-slate-700">Scan to join</div>
+          <div className="justify-self-center rounded-3xl bg-slate-950/80 border border-white/10 p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] md:justify-self-end">
+            <img src={qr} alt={`Join ${code}`} className="h-auto w-full max-w-[280px] rounded-2xl" />
+            <div className="mt-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Scan to join</div>
           </div>
         )}
       </div>
 
-      <div className="mt-10">
+      <div className="mt-4">
         {room === null ? (
-          <p className="text-slate-500">Connecting…</p>
+          <p className="text-slate-500 animate-pulse text-center py-6">Connecting to show server…</p>
         ) : (
           <>
-            <h2 className="mb-3 text-xl text-slate-400">
-              {room.players.length === 0 ? "Waiting for players to join…" : `${room.players.length} in the room`}
+            <h2 className="mb-4 text-lg font-bold uppercase tracking-wider text-slate-400 border-b border-slate-900 pb-2">
+              {room.players.length === 0 ? "Waiting for players to join…" : `Roster (${room.players.length} active)`}
             </h2>
             <Roster room={room} size="big" />
 
-            <div className="mt-8 flex flex-col items-center gap-3">
+            <div className="mt-12 flex flex-col items-center gap-3">
               <button
                 type="button"
                 onClick={() => socket.emit("room:start", { code })}
                 disabled={!canStart}
-                className="rounded-2xl bg-emerald-500 px-12 py-5 text-2xl font-black text-white shadow-2xl shadow-emerald-500/30 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:opacity-50 disabled:shadow-none"
+                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-16 py-5 text-2xl font-black text-white shadow-[0_10px_35px_rgba(16,185,129,0.3)] hover:scale-[1.03] active:scale-[0.98] disabled:scale-100 disabled:shadow-none disabled:cursor-not-allowed disabled:from-slate-800 disabled:to-slate-800 disabled:opacity-40 transition-all font-heading"
               >
                 ▶ Start the show
               </button>
-              <p className="text-sm text-slate-500">
+              <p className="text-xs tracking-wider uppercase text-slate-500">
                 {canStart
-                  ? `${playerCount} ready · late joiners get a 6-second grace period`
-                  : "Need at least one player to start"}
+                  ? `${playerCount} player${playerCount > 1 ? "s" : ""} in lobby · countdown starts on launch`
+                  : "Waiting for at least one player to join"}
               </p>
             </div>
           </>
         )}
       </div>
-    </>
+    </div>
   );
 }
 
-/** Pre-game / first-turn countdown overlay. Updates every 250ms. */
 function Countdown({ endsAt }: { endsAt: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
+    const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
   }, []);
   const remaining = Math.max(0, Math.ceil((endsAt - now) / 1000));
   if (remaining <= 0) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/85 backdrop-blur">
-      <div className="text-sm uppercase tracking-[0.4em] text-amber-300">Get ready</div>
-      <div className="mt-2 text-[16rem] font-black leading-none tabular-nums text-amber-300 drop-shadow-[0_0_60px_rgba(251,191,36,0.4)]">
+    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md">
+      <div className="text-sm font-bold uppercase tracking-[0.45em] text-amber-400">Get ready</div>
+      <motion.div
+        key={remaining}
+        initial={{ scale: 0.6, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        exit={{ scale: 1.4, opacity: 0, rotate: 10 }}
+        transition={{ type: "spring", stiffness: 180, damping: 11 }}
+        className="mt-2 text-[14rem] font-black leading-none tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-amber-300 to-amber-500 drop-shadow-[0_0_50px_rgba(245,158,11,0.5)] font-heading"
+      >
         {remaining}
-      </div>
-      <div className="mt-4 text-2xl text-slate-200">The show starts in {remaining}…</div>
+      </motion.div>
+      <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">The show starts in {remaining}…</div>
     </div>
   );
 }

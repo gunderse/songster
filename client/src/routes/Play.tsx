@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 
 import type { TimelineCardView } from "@songster/shared/game";
 import type { RoomState } from "@songster/shared/room";
@@ -22,13 +21,13 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   const [suggestMode, setSuggestMode] = useState(false);
   const [suggestSlot, setSuggestSlot] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
   }, []);
 
-  // Reset placement state every turn (turnId changes even when the same player
-  // places twice in a row, e.g. solo play) and when the phase flips.
+  // Reset placement state every turn
   const turnSig = active ? `${active.turnId}|${active.phase}` : "none";
   useEffect(() => {
     setSelectedSlot(null);
@@ -49,10 +48,16 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     const winningTeam = room.teams.find((t) => t.id === game.winnerTeamId);
     return (
       <Centered>
-        <div className="text-7xl">{won ? "🏆" : "🎬"}</div>
-        <h1 className="text-3xl font-black">{won ? "Your team wins!" : "Game over"}</h1>
-        <p className="text-lg" style={{ color: winningTeam?.color }}>
-          {winningTeam?.name} took it
+        <motion.div 
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="text-7xl drop-shadow-[0_0_20px_rgba(251,191,36,0.3)]"
+        >
+          {won ? "🏆" : "🎬"}
+        </motion.div>
+        <h1 className="text-3xl font-black font-heading mt-2">{won ? "Victory!" : "Game Over"}</h1>
+        <p className="text-lg font-bold" style={{ color: winningTeam?.color }}>
+          {winningTeam?.name} took the crown
         </p>
       </Centered>
     );
@@ -65,17 +70,18 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── suspense (everyone holds breath; the year is hidden until reveal) ──
   if (active !== null && active.phase === "suspense") {
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100">
+      <main className="relative flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-slate-100 bg-slate-950 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-amber-500/5 blur-[80px]" />
         <motion.div
-          animate={{ scale: [1, 1.1, 1], rotate: [-3, 3, -3] }}
-          transition={{ scale: { duration: 0.5, repeat: Infinity }, rotate: { duration: 0.18, repeat: Infinity } }}
-          className="text-7xl"
+          animate={{ scale: [1, 1.1, 1], rotate: [-4, 4, -4] }}
+          transition={{ scale: { duration: 0.5, repeat: Infinity, ease: "easeInOut" }, rotate: { duration: 0.15, repeat: Infinity } }}
+          className="text-7xl drop-shadow-[0_0_30px_rgba(245,158,11,0.4)]"
         >
           🥁
         </motion.div>
-        <div className="text-2xl font-black text-amber-300">Drumroll please…</div>
-        <p className="text-slate-300">
-          Did <span className="font-semibold" style={{ color: activeTeam?.color }}>{result?.placerName ?? active.placerName}</span> get it right?
+        <div className="text-2xl font-black font-heading text-amber-300 uppercase tracking-widest">Drumroll please…</div>
+        <p className="text-slate-300 max-w-xs text-sm">
+          Did <span className="font-bold" style={{ color: activeTeam?.color }}>{result?.placerName ?? active.placerName}</span> place it correctly?
         </p>
       </main>
     );
@@ -83,28 +89,29 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── reveal (everyone sees the result with an animated flip) ──────────
   if (active !== null && active.phase === "revealing" && result !== null) {
+    const isWin = result.correct || result.steal?.correct === true;
+    const borderCol = isWin ? "border-emerald-500 shadow-emerald-500/20" : "border-rose-500 shadow-rose-500/20";
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100" style={{ perspective: 1000 }}>
+      <main className="relative flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-slate-100 bg-slate-950 overflow-hidden" style={{ perspective: 1000 }}>
+        <div className={`absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full blur-[80px] ${isWin ? "bg-emerald-500/5" : "bg-rose-500/5"}`} />
         <motion.div
-          initial={{ rotateY: 180, scale: 0.9 }}
-          animate={{ rotateY: 0, scale: 1 }}
+          initial={{ rotateY: 180, scale: 0.9, opacity: 0 }}
+          animate={{ rotateY: 0, scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 100, damping: 14 }}
           style={{ transformStyle: "preserve-3d" }}
-          className="flex flex-col items-center gap-2 rounded-2xl border-2 bg-slate-900/80 px-8 py-6"
-          // eslint-disable-next-line react/forbid-dom-props
-          // border colour matches the verdict
+          className={`flex flex-col items-center gap-3 rounded-3xl border bg-slate-900/90 backdrop-blur-md px-10 py-8 shadow-2xl ${borderCol}`}
         >
           <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
-          <div className="text-7xl font-black tabular-nums">{result.song.year}</div>
-          <div className="text-xl font-semibold">{result.song.title ?? "Unknown"}</div>
-          <div className="text-slate-400">{result.song.artist ?? ""}</div>
+          <div className="text-6xl font-black font-heading tabular-nums text-slate-100">{result.song.year}</div>
+          <div className="text-xl font-bold font-heading line-clamp-1 text-slate-200 mt-2">{result.song.title ?? "Unknown"}</div>
+          <div className="text-slate-400 text-sm line-clamp-1 font-semibold">{result.song.artist ?? ""}</div>
         </motion.div>
-        <p className="mt-2 text-sm" style={{ color: result.correct ? "#34d399" : "#fb7185" }}>
-          {result.placerName} {result.correct ? "nailed it" : "missed"} for {activeTeam?.name}
+        <p className="mt-2 text-sm font-bold tracking-wide uppercase" style={{ color: result.correct ? "#34d399" : "#f43f5e" }}>
+          {result.placerName} {result.correct ? "nailed it!" : "missed"}
         </p>
         {result.steal !== null && (
-          <p className="text-sm font-semibold" style={{ color: result.steal.correct ? "#fbbf24" : "#64748b" }}>
-            {result.steal.correct ? `🥷 STOLEN by ${result.steal.playerName}!` : `${result.steal.playerName}'s steal missed`}
+          <p className="text-sm font-bold uppercase tracking-wider mt-1" style={{ color: result.steal.correct ? "#fbbf24" : "#64748b" }}>
+            {result.steal.correct ? `🥷 STOLEN BY ${result.steal.playerName}!` : `${result.steal.playerName}'s steal missed`}
           </p>
         )}
       </main>
@@ -116,19 +123,24 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     const suggestions = active.suggestions ?? [];
     const deadlineMs = active.placeDeadline !== null ? Math.max(0, active.placeDeadline - now) : null;
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
-        <div className="text-center">
-          <div className="text-sm text-slate-500">Your turn, {me.name}</div>
-          <h1 className="text-2xl font-black">Where does it go?</h1>
-          <p className="text-sm text-slate-400">Listen on the big screen 🔊, then tap the spot where this song fits by year.</p>
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+        {/* Glow ambient shapes */}
+        <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
+        
+        <div className="text-center relative z-10">
+          <div className="text-xs uppercase tracking-widest font-bold text-indigo-400">Your turn, {me.name}</div>
+          <h1 className="text-2xl font-black font-heading tracking-tight mt-1">Where does it fit?</h1>
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Listen to the snippet on the shared Hub screen 🔊, then choose the correct time slot.</p>
           {deadlineMs !== null && <TurnClock msLeft={deadlineMs} />}
         </div>
 
-        <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#64748b"} onUse={(i) => setSelectedSlot(i)} />
+        <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#6366f1"} onUse={(i) => setSelectedSlot(i)} />
 
-        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} />
+        <div className="relative z-10 flex-1 flex flex-col justify-start">
+          <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} />
+        </div>
 
-        <div className="mt-auto flex flex-col gap-2">
+        <div className="mt-auto flex flex-col gap-2 relative z-10">
           <button
             type="button"
             disabled={selectedSlot === null || committed}
@@ -137,17 +149,17 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               socket.emit("player:placeCard", { index: selectedSlot });
               setCommitted(true);
             }}
-            className="rounded-xl bg-emerald-600 px-6 py-3 text-lg font-semibold text-white hover:bg-emerald-500 disabled:opacity-40"
+            className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-6 py-4 text-lg font-black text-white hover:scale-[1.02] active:scale-[0.98] disabled:scale-100 disabled:opacity-40 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed transition font-heading shadow-lg shadow-emerald-950/20"
           >
-            {committed ? "Locked in…" : selectedSlot === null ? "Tap a spot above ↑" : "Lock it in"}
+            {committed ? "Locked in…" : selectedSlot === null ? "Choose a slot above ↑" : "Lock in placement"}
           </button>
           {!committed && me.tokens > 0 && (
             <button
               type="button"
               onClick={() => socket.emit("player:useSkip")}
-              className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+              className="rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition active:scale-[0.98]"
             >
-              🎟️ Skip this song · {me.tokens} {me.tokens === 1 ? "token" : "tokens"} left
+              🎟️ Use Skip token · {me.tokens} left
             </button>
           )}
           <div className="flex gap-2">
@@ -179,14 +191,17 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── suggest mode: send a non-binding hint to your placer ──────────────
   if (suggestMode && active !== null) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
-        <div className="text-center">
-          <div className="text-sm font-semibold text-indigo-300">💡 Suggesting to {placerName}</div>
-          <h1 className="text-2xl font-black">Where do you think it fits?</h1>
-          <p className="text-sm text-slate-400">Your hint shows up on the placer's screen — they decide.</p>
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+        <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
+        <div className="text-center relative z-10">
+          <div className="text-xs uppercase tracking-widest font-bold text-indigo-300">💡 Teammate suggestion</div>
+          <h1 className="text-2xl font-black font-heading mt-1">Help out {placerName}</h1>
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Suggest where the song belongs on your timeline. They will make the final decision.</p>
         </div>
-        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={suggestSlot} onSelect={setSuggestSlot} />
-        <div className="mt-auto flex flex-col gap-2">
+        <div className="relative z-10 flex-1 flex flex-col justify-start">
+          <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={suggestSlot} onSelect={setSuggestSlot} />
+        </div>
+        <div className="mt-auto flex flex-col gap-2 relative z-10">
           <button
             type="button"
             disabled={suggestSlot === null}
@@ -195,11 +210,11 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               socket.emit("player:suggestPlacement", { index: suggestSlot });
               setSuggestMode(false);
             }}
-            className="rounded-xl bg-indigo-500 px-6 py-3 text-lg font-semibold text-white hover:bg-indigo-400 disabled:opacity-40"
+            className="rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-4 text-lg font-black text-white hover:scale-[1.02] active:scale-[0.98] disabled:scale-100 disabled:opacity-40 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed transition font-heading shadow-lg shadow-indigo-950/20"
           >
-            {suggestSlot === null ? "Tap a spot above ↑" : "Send suggestion 💡"}
+            {suggestSlot === null ? "Choose a slot above ↑" : "Send suggestion 💡"}
           </button>
-          <button type="button" onClick={() => setSuggestMode(false)} className="text-sm text-slate-500">
+          <button type="button" onClick={() => setSuggestMode(false)} className="py-2.5 text-sm font-semibold text-slate-400 hover:text-white transition">
             Cancel
           </button>
         </div>
@@ -210,16 +225,19 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── steal mode: place your challenge on your own timeline ─────────────
   if (stealMode && active !== null) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100">
-        <div className="text-center">
-          <div className="text-sm font-semibold text-amber-400">🥷 Stealing from {activeTeam?.name}</div>
-          <h1 className="text-2xl font-black">Where does it go?</h1>
-          <p className="text-sm text-slate-400">
-            Place it on YOUR timeline. If they're wrong and you're right, you take the card.
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 overflow-x-hidden">
+        <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-amber-500/5 blur-[80px]" />
+        <div className="text-center relative z-10">
+          <div className="text-xs uppercase tracking-widest font-bold text-amber-400">🥷 Steal play</div>
+          <h1 className="text-2xl font-black font-heading mt-1">Steal the card</h1>
+          <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+            Place it on your own timeline. If {placerName} guessed wrong and you guess right, your team steals the card!
           </p>
         </div>
-        <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#64748b"} selected={stealSlot} onSelect={setStealSlot} accent="amber" />
-        <div className="mt-auto flex flex-col gap-2">
+        <div className="relative z-10 flex-1 flex flex-col justify-start">
+          <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={stealSlot} onSelect={setStealSlot} accent="amber" />
+        </div>
+        <div className="mt-auto flex flex-col gap-2 relative z-10">
           <button
             type="button"
             disabled={stealSlot === null}
@@ -228,9 +246,9 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               socket.emit("player:stealPlace", { index: stealSlot });
               setStealMode(false);
             }}
-            className="rounded-xl bg-amber-600 px-6 py-3 text-lg font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+            className="rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 text-lg font-black text-white hover:scale-[1.02] active:scale-[0.98] disabled:scale-100 disabled:opacity-40 disabled:from-slate-800 disabled:to-slate-800 disabled:cursor-not-allowed transition font-heading shadow-lg shadow-amber-950/20"
           >
-            {stealSlot === null ? "Tap a spot above ↑" : "Steal it here! (1 token)"}
+            {stealSlot === null ? "Choose a slot above ↑" : "Confirm Steal (1 Token)"}
           </button>
           <button
             type="button"
@@ -238,7 +256,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               setStealMode(false);
               setStealSlot(null);
             }}
-            className="text-sm text-slate-500"
+            className="py-2.5 text-sm font-semibold text-slate-400 hover:text-white transition"
           >
             Cancel
           </button>
@@ -249,32 +267,35 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── waiting (someone else is placing) ─────────────────────────────────
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 landscape:max-w-3xl">
-      <div className="text-center">
-        <div className="text-sm text-slate-500">Room {room.code}</div>
+    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+      <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-slate-800/10 blur-[80px]" />
+      
+      <div className="text-center relative z-10">
+        <div className="text-xs uppercase tracking-widest font-bold text-slate-500">Room {room.code}</div>
         {active !== null ? (
-          <h1 className="text-xl font-bold">
+          <h1 className="text-lg font-extrabold font-heading mt-1 leading-snug">
             <span style={{ color: activeTeam?.color }}>{activeTeam?.name}</span> is placing
-            <div className="text-sm font-normal text-slate-400">{placerName} is choosing · listen on the hub 🔊</div>
+            <div className="text-xs font-semibold text-slate-400 mt-1 font-sans">{placerName} is picking · listen on the hub 🔊</div>
           </h1>
         ) : (
-          <h1 className="text-xl font-bold">Get ready…</h1>
+          <h1 className="text-lg font-bold font-heading mt-1">Get ready…</h1>
         )}
       </div>
 
       {active !== null && me.teamId !== active.teamId && active.steal !== null && (
-        <p className="text-center text-sm font-semibold text-amber-400">
-          🥷 {active.steal.playerName} ({room.teams.find((t) => t.id === active.steal!.teamId)?.name}) is stealing!
+        <p className="text-center text-xs font-bold uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 rounded-xl py-2 px-4 relative z-10">
+          🥷 {active.steal.playerName} is challenging with a STEAL!
         </p>
       )}
-      <div className="flex flex-wrap justify-center gap-2">
+      
+      <div className="flex justify-center gap-3 relative z-10">
         {canSteal && (
           <button
             type="button"
             onClick={() => setStealMode(true)}
-            className="rounded-lg bg-amber-600/90 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-500"
+            className="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3.5 text-sm font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-amber-950/20"
           >
-            🥷 Steal · {me.tokens} {me.tokens === 1 ? "token" : "tokens"}
+            🥷 Steal card ({me.tokens} left)
           </button>
         )}
         {canSuggest && (
@@ -284,34 +305,34 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               setSuggestSlot(mySuggestion?.index ?? null);
               setSuggestMode(true);
             }}
-            className="rounded-lg bg-indigo-500/90 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+            className="rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-950/20"
           >
-            💡 {mySuggestion !== null ? "Update suggestion" : "Suggest a spot"}
+            💡 {mySuggestion !== null ? "Change hint" : "Suggest slot"}
           </button>
         )}
       </div>
 
       {active !== null && active.phase === "placing" && (
-        <div className="mx-auto flex w-full max-w-sm gap-2">
+        <div className="mx-auto flex w-full max-w-sm gap-2 relative z-10 mt-2">
           <ReplayButton ready={now >= active.snippetPlayingUntil} />
           <PlayMoreButton ready={now >= active.snippetPlayingUntil} />
         </div>
       )}
 
-      <div>
-        <div className="mb-1 text-sm text-slate-500">Your team{myTeam !== null ? ` · ${myTeam.name}` : ""}</div>
+      <div className="relative z-10 mt-2">
+        <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Your timeline {myTeam !== null ? `· ${myTeam.name}` : ""}</div>
         <MiniTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} />
       </div>
 
-      <Scoreboard room={room} />
+      <div className="relative z-10 mt-auto">
+        <Scoreboard room={room} />
+      </div>
     </main>
   );
 }
 
 /**
  * Vertical, explicitly-labeled placement picker (portrait-friendly).
- * Oldest at the top → newest at the bottom; tap a labeled gap to choose where
- * the mystery song belongs ("Before 1985", "Between 1985 and 1995", "After 1995").
  */
 function TimelinePicker(props: {
   cards: TimelineCardView[];
@@ -319,14 +340,14 @@ function TimelinePicker(props: {
   selected: number | null;
   onSelect: (index: number) => void;
   accent?: "emerald" | "amber";
-  /** Indices the placer's teammates have suggested — badged but not selected. */
   suggestionIndices?: number[];
 }) {
   const { cards, teamColor, selected, onSelect, accent = "emerald", suggestionIndices = [] } = props;
+  
   const selClass =
     accent === "amber"
-      ? "border-amber-400 bg-amber-500/25 text-amber-100"
-      : "border-emerald-400 bg-emerald-500/25 text-emerald-100";
+      ? "border-amber-400 bg-amber-500/20 text-amber-100 shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+      : "border-emerald-400 bg-emerald-500/20 text-emerald-100 shadow-[0_0_15px_rgba(16,185,129,0.15)]";
 
   const gapLabel = (i: number): string => {
     if (cards.length === 0) return "Place it here";
@@ -342,35 +363,36 @@ function TimelinePicker(props: {
     const isSel = selected === i;
     const suggestN = suggestCount(i);
     rows.push(
-      <button
+      <motion.button
         key={`gap-${i}`}
         type="button"
+        whileTap={{ scale: 0.98 }}
         onClick={() => onSelect(i)}
-        className={`relative flex items-center justify-center gap-2 rounded-xl border-2 py-3 text-sm font-bold transition ${
-          isSel ? `${selClass} border-solid` : "border-dashed border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+        className={`relative flex items-center justify-center gap-2 rounded-2xl border-2 py-4 text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
+          isSel ? `${selClass} border-solid` : "border-dashed border-slate-800 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200"
         }`}
       >
-        <span className="text-base">{isSel ? "✓" : "＋"}</span>
+        <span className="text-sm">{isSel ? "✓" : "＋"}</span>
         {gapLabel(i)}
         {suggestN > 0 && (
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-indigo-500 px-2 py-0.5 text-[10px] text-white">
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-black text-white shadow-md animate-pulse">
             💡 {suggestN}
           </span>
         )}
-      </button>,
+      </motion.button>,
     );
     if (i < cards.length) {
       const card = cards[i]!;
       rows.push(
         <div
           key={`card-${card.songId}`}
-          className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2"
+          className="flex items-center gap-3 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 shadow-sm"
           style={{ borderLeftColor: teamColor, borderLeftWidth: 4 }}
         >
-          <div className="text-2xl font-black tabular-nums">{card.year}</div>
+          <div className="text-2xl font-black font-heading tabular-nums text-slate-100">{card.year}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-slate-200">{card.title ?? "—"}</div>
-            {card.artist !== null && <div className="truncate text-xs text-slate-500">{card.artist}</div>}
+            <div className="truncate text-sm font-extrabold text-slate-200">{card.title ?? "—"}</div>
+            {card.artist !== null && <div className="truncate text-xs text-slate-400 font-semibold mt-0.5">{card.artist}</div>}
           </div>
         </div>,
       );
@@ -378,13 +400,15 @@ function TimelinePicker(props: {
   }
 
   return (
-    <div className="rounded-2xl bg-slate-900/50 p-3">
-      <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+    <div className="rounded-3xl bg-slate-900/30 border border-white/5 p-4 backdrop-blur-sm shadow-inner flex flex-col flex-1 max-h-[50vh]">
+      <div className="mb-3 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">
         <span>↑ Older</span>
-        <span className="text-slate-400">Tap where it fits</span>
+        <span className="text-indigo-400 font-bold bg-indigo-950/30 rounded px-2 py-0.5 border border-indigo-900/20">Select gap</span>
         <span>Newer ↓</span>
       </div>
-      <div className="flex max-h-[52vh] flex-col gap-1.5 overflow-y-auto pr-1">{rows}</div>
+      <div className="flex-1 overflow-y-auto pr-1 space-y-2 custom-scrollbar">
+        {rows}
+      </div>
     </div>
   );
 }
@@ -392,17 +416,20 @@ function TimelinePicker(props: {
 /** Compact read-only horizontal strip for reference (waiting view). */
 function MiniTimeline({ cards, teamColor }: { cards: TimelineCardView[]; teamColor: string }) {
   return (
-    <div className="flex items-stretch gap-1 overflow-x-auto rounded-xl bg-slate-900/50 p-2">
+    <div className="flex items-stretch gap-2 overflow-x-auto rounded-2xl bg-slate-900/30 border border-white/5 p-3 scrollbar-hide">
       {cards.map((card) => (
         <div
           key={card.songId}
-          className="flex w-20 shrink-0 flex-col items-center rounded-md border border-slate-700 bg-slate-800 p-2 text-center"
+          className="flex w-24 shrink-0 flex-col items-center rounded-xl border border-white/5 bg-slate-900/80 p-2.5 text-center shadow-sm"
           style={{ borderTopColor: teamColor, borderTopWidth: 3 }}
         >
-          <div className="text-lg font-black tabular-nums">{card.year}</div>
-          <div className="line-clamp-2 text-[10px] leading-tight text-slate-400">{card.title ?? ""}</div>
+          <div className="text-lg font-black font-heading tabular-nums text-slate-100">{card.year}</div>
+          <div className="line-clamp-2 text-[10px] leading-tight text-slate-400 font-semibold mt-0.5">{card.title ?? ""}</div>
         </div>
       ))}
+      {cards.length === 0 && (
+        <div className="text-xs text-slate-500 py-3 text-center w-full uppercase tracking-wider font-bold">Timeline is empty</div>
+      )}
     </div>
   );
 }
@@ -411,18 +438,25 @@ function Scoreboard({ room }: { room: RoomState }) {
   const game = room.game;
   if (game === null) return null;
   return (
-    <div className="mt-1 space-y-1.5">
+    <div className="space-y-2.5 bg-slate-900/30 border border-white/5 rounded-2xl p-4 backdrop-blur-sm shadow-sm">
       {room.teams.map((team) => {
         const len = game.timelines.find((t) => t.teamId === team.id)?.cards.filter((c) => !c.isSeed).length ?? 0;
         return (
-          <div key={team.id} className="flex items-center gap-2 text-sm">
-            <span className="w-12 font-semibold" style={{ color: team.color }}>
+          <div key={team.id} className="flex items-center gap-3 text-xs uppercase tracking-wider">
+            <span className="w-16 font-black text-right" style={{ color: team.color }}>
               {team.name}
             </span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-800">
-              <div className="h-full rounded-full" style={{ width: `${(len / game.target) * 100}%`, background: team.color }} />
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-950 border border-white/5 relative">
+              <div 
+                className="h-full rounded-full transition-all duration-300" 
+                style={{ 
+                  width: `${(len / game.target) * 100}%`, 
+                  background: team.color,
+                  boxShadow: `0 0 8px ${team.color}44`
+                }} 
+              />
             </div>
-            <span className="tabular-nums text-slate-400">
+            <span className="w-10 tabular-nums text-right font-black text-slate-400">
               {len}/{game.target}
             </span>
           </div>
@@ -438,11 +472,13 @@ function TurnClock({ msLeft }: { msLeft: number }) {
   const urgent = s <= 10;
   return (
     <div
-      className={`mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-bold tabular-nums ${
-        urgent ? "bg-rose-500/20 text-rose-300" : "bg-slate-800 text-slate-300"
+      className={`mt-3 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-black uppercase tracking-wider tabular-nums border ${
+        urgent 
+          ? "bg-rose-500/10 border-rose-500/20 text-rose-300 shadow-[0_0_15px_rgba(239,68,68,0.1)] animate-pulse" 
+          : "bg-slate-900 border-white/5 text-slate-300"
       }`}
     >
-      ⏱ {s}s {urgent && s > 0 && <span className="text-xs font-normal opacity-80">— time's running out!</span>}
+      ⏱️ {s}s left {urgent && s > 0 && <span className="font-normal opacity-85">— speed up!</span>}
     </div>
   );
 }
@@ -466,26 +502,26 @@ function SuggestionsList({
     return `Between ${cards[i - 1]!.year} & ${cards[i]!.year}`;
   };
   return (
-    <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-3">
-      <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-indigo-200">
-        💡 Teammate suggestions
-        <span className="rounded-full bg-indigo-500/30 px-1.5 py-0.5 text-[10px]" style={{ color: accentColor }}>
+    <div className="rounded-2xl border border-indigo-500/20 bg-indigo-950/20 backdrop-blur-md p-4 relative z-10 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-indigo-300">
+        💡 Partner suggestions
+        <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[10px]" style={{ color: accentColor }}>
           {suggestions.length}
         </span>
       </div>
-      <ul className="flex flex-col gap-1.5">
+      <ul className="flex flex-col gap-2">
         {suggestions.map((s) => (
           <li key={s.playerId}>
             <button
               type="button"
               onClick={() => onUse(s.index)}
-              className="flex w-full items-center justify-between rounded-lg bg-slate-900/60 px-3 py-1.5 text-left text-sm hover:bg-slate-900"
+              className="flex w-full items-center justify-between rounded-xl bg-slate-950/40 border border-white/5 px-3 py-2 text-left text-xs font-medium hover:bg-slate-900 hover:text-white transition"
             >
               <span>
-                <span className="font-semibold text-indigo-200">{s.playerName}</span>
-                <span className="text-slate-400"> → {label(s.index)}</span>
+                <span className="font-black text-indigo-200">{s.playerName}</span>
+                <span className="text-slate-400 font-semibold"> → {label(s.index)}</span>
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">Use</span>
+              <span className="text-[9px] uppercase tracking-widest font-black text-indigo-300 bg-indigo-950/50 rounded px-2 py-0.5 border border-indigo-900/10">Apply</span>
             </button>
           </li>
         ))}
@@ -495,7 +531,12 @@ function SuggestionsList({
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
-  return <main className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center text-slate-100">{children}</main>;
+  return (
+    <main className="relative flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-slate-100 bg-slate-950">
+      <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-slate-800/10 blur-[80px]" />
+      <div className="relative z-10 flex flex-col items-center gap-3">{children}</div>
+    </main>
+  );
 }
 
 function ReplayButton({ ready }: { ready: boolean }) {
@@ -504,9 +545,9 @@ function ReplayButton({ ready }: { ready: boolean }) {
       type="button"
       disabled={!ready}
       onClick={() => socket.emit("player:replay")}
-      className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+      className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
-      {ready ? "🔁 Play again" : "🔁 Playing…"}
+      {ready ? "🔁 Replay audio" : "🔁 Playing…"}
     </button>
   );
 }
@@ -517,7 +558,7 @@ function PlayMoreButton({ ready }: { ready: boolean }) {
       type="button"
       disabled={!ready}
       onClick={() => socket.emit("player:playMore")}
-      className="flex-1 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-40"
+      className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
       {ready ? "⏩ Play more…" : "⏩ Playing…"}
     </button>

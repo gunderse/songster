@@ -7,6 +7,7 @@ import type DatabaseType from "better-sqlite3";
 import { logger } from "../logger.js";
 import { extractMetadata } from "./metadata.js";
 import { computeSuspiciousFlags } from "./suspicious.js";
+import { getSetting } from "./settings-repo.js";
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".flac", ".ogg", ".oga", ".opus", ".wav", ".aac"]);
 const artDir = path.resolve(import.meta.dirname, "../../data/art");
@@ -91,6 +92,129 @@ async function* walkAudioFiles(root: string): AsyncGenerator<string> {
   }
 }
 
+async function scanPlexLibrary(
+  db: DatabaseType.Database,
+  plexUrl: string,
+  plexToken: string,
+  plexLibraryName: string,
+  scanLimit: number,
+  summary: ScanSummary,
+  upsert: DatabaseType.Statement,
+  ensureGenre: DatabaseType.Statement,
+  existing: Set<string>
+): Promise<void> {
+  const cleanPlexUrl = plexUrl.replace(/\/+$/, "");
+  logger.info({ plexUrl: cleanPlexUrl, libraryName: plexLibraryName, limit: scanLimit }, "scanning Plex music library");
+  
+  const sectionsResponse = await fetch(`${cleanPlexUrl}/library/sections`, {
+    headers: {
+      "Accept": "application/json",
+      "X-Plex-Token": plexToken,
+    },
+  });
+  if (!sectionsResponse.ok) {
+    throw new Error(`Failed to fetch sections from Plex: status ${sectionsResponse.status}`);
+  }
+  const sectionsData = await sectionsResponse.json() as any;
+  const section = (sectionsData.MediaContainer?.Directory || []).find(
+    (dir: any) => dir.title.toLowerCase() === plexLibraryName.toLowerCase()
+  );
+  if (!section) {
+    throw new Error(`Plex library section "${plexLibraryName}" not found. Available: ${(sectionsData.MediaContainer?.Directory || []).map((d: any) => d.title).join(", ")}`);
+  }
+  const sectionId = section.key;
+
+  const tracksResponse = await fetch(`${cleanPlexUrl}/library/sections/${sectionId}/all?type=10&X-Plex-Token=${plexToken}`, {
+    headers: {
+      "Accept": "application/json",
+    },
+  });
+  if (!tracksResponse.ok) {
+    throw new Error(`Failed to fetch tracks from Plex: status ${tracksResponse.status}`);
+  }
+  const tracksData = await tracksResponse.json() as any;
+  const tracks = tracksData.MediaContainer?.Metadata || [];
+  
+  logger.info({ totalTracksFound: tracks.length }, "Plex tracks retrieved");
+  
+  const tracksToScan = tracks.slice(0, scanLimit);
+  for (const track of tracksToScan) {
+    summary.scanned += 1;
+    try {
+      const part = track.Media?.[0]?.Part?.[0];
+      if (!part || !part.key) {
+        continue;
+      }
+      
+      const plexPartKey = part.key;
+      const relativePath = `plex://${plexPartKey}`;
+      const id = opaqueId(relativePath);
+      
+      let artPath: string | null = null;
+      const thumb = track.thumb || track.parentThumb || track.grandparentThumb;
+      if (thumb) {
+        try {
+          const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${plexToken}`);
+          if (artResponse.ok) {
+            const buffer = await artResponse.arrayBuffer();
+            const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
+            const fileName = `${id}.${ext}`;
+            await writeFile(path.join(artDir, fileName), Buffer.from(buffer));
+            artPath = path.posix.join("art", fileName);
+            summary.withArt += 1;
+          }
+        } catch (err) {
+          logger.warn({ track: track.title, error: (err as Error).message }, "failed to download Plex art");
+        }
+      }
+      
+      const parsedYear = track.year || (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null);
+      const durationS = track.duration ? Math.round(track.duration / 1000) : null;
+      const primaryGenre = track.Genre?.[0]?.tag || section.title;
+
+      const flags = computeSuspiciousFlags({
+        album: track.parentTitle || null,
+        title: track.title || null,
+        artist: track.grandparentTitle || null,
+        rawYear: parsedYear,
+        durationS,
+      });
+      if (flags.length > 0) summary.flagged += 1;
+
+      const row: SongUpsertRow = {
+        id,
+        file_path: relativePath,
+        title: track.title || titleFromFileName(relativePath),
+        artist: track.grandparentTitle || null,
+        album: track.parentTitle || null,
+        genre: primaryGenre,
+        tag_genre: track.Genre?.[0]?.tag || null,
+        raw_year: parsedYear,
+        snippet_start_s: defaultSnippetStart(durationS),
+        duration_s: durationS,
+        art_path: artPath,
+        suspicious_flags: JSON.stringify(flags),
+        now: Date.now(),
+      };
+      upsert.run(row);
+
+      if (row.genre !== null && row.genre.length > 0) ensureGenre.run(id, row.genre);
+      
+      if (track.Genre) {
+        for (const g of track.Genre) {
+          if (g.tag) ensureGenre.run(id, g.tag);
+        }
+      }
+
+      if (existing.has(relativePath)) summary.updated += 1;
+      else summary.inserted += 1;
+    } catch (error) {
+      summary.errors += 1;
+      logger.warn({ track: track.title, error: (error as Error).message }, "failed to ingest Plex track");
+    }
+  }
+}
+
 export async function scanLibrary(db: DatabaseType.Database, options: ScanOptions): Promise<ScanSummary> {
   const musicDir = path.resolve(options.musicDir);
   await mkdir(artDir, { recursive: true });
@@ -137,9 +261,37 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     errors: 0,
   };
 
-  for await (const fullPath of walkAudioFiles(musicDir)) {
-    summary.scanned += 1;
-    const relativePath = path.relative(musicDir, fullPath);
+  const plexUrlEnv = process.env.SONGSTER_PLEX_URL?.trim() || "";
+  const plexTokenEnv = process.env.SONGSTER_PLEX_TOKEN?.trim() || "";
+  const plexLibraryNameEnv = process.env.SONGSTER_PLEX_LIBRARY_NAME?.trim() || "";
+  const plexScanLimitEnv = process.env.SONGSTER_PLEX_SCAN_LIMIT?.trim() || "";
+
+  const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "");
+  const plexToken = plexTokenEnv || getSetting(db, "plex_token", "");
+  const plexLibraryName = plexLibraryNameEnv || getSetting(db, "plex_library_name", "Music");
+  const plexScanLimit = plexScanLimitEnv ? Number(plexScanLimitEnv) : Number(getSetting(db, "plex_scan_limit", "100"));
+
+  if (plexUrl.length > 0 && plexToken.length > 0) {
+    try {
+      await scanPlexLibrary(
+        db,
+        plexUrl,
+        plexToken,
+        plexLibraryName,
+        plexScanLimit,
+        summary,
+        upsert,
+        ensureGenre,
+        existing
+      );
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, "Plex scan failed");
+      summary.errors += 1;
+    }
+  } else {
+    for await (const fullPath of walkAudioFiles(musicDir)) {
+      summary.scanned += 1;
+      const relativePath = path.relative(musicDir, fullPath);
 
     try {
       const meta = await extractMetadata(fullPath);
@@ -187,6 +339,7 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     } catch (error) {
       summary.errors += 1;
       logger.warn({ file: relativePath, error: (error as Error).message }, "failed to ingest file");
+    }
     }
   }
 

@@ -28,12 +28,12 @@ is_virtual_interface() {
 load_conda() {
   if command -v conda >/dev/null 2>&1; then
     eval "$(conda shell.bash hook)"
-    return
+    return 0
   fi
 
   if [[ -n "${CONDA_EXE:-}" ]] && [[ -x "${CONDA_EXE}" ]]; then
     eval "$(${CONDA_EXE} shell.bash hook)"
-    return
+    return 0
   fi
 
   local candidates=(
@@ -47,18 +47,22 @@ load_conda() {
     if [[ -f "$candidate" ]]; then
       # shellcheck source=/dev/null
       source "$candidate"
-      return
+      return 0
     fi
   done
 
-  fail "Could not find Conda. Make sure Conda is installed and available on this machine."
+  return 1
 }
 
 activate_env() {
-  [[ -d "$ENV_PREFIX" ]] || fail "Project environment not found at $ENV_PREFIX. Run: conda env create --prefix ./.conda-env --file ./environment.yml"
-  load_conda
-  conda activate "$ENV_PREFIX"
-  export PATH="$ENV_PREFIX/bin:$PATH"
+  if [[ -d "$ENV_PREFIX" ]]; then
+    export PATH="$ENV_PREFIX/bin:$PATH"
+    if load_conda; then
+      conda activate "$ENV_PREFIX" 2>/dev/null || true
+    fi
+  else
+    log "Conda environment not found at $ENV_PREFIX. Falling back to system Node and pnpm."
+  fi
 }
 
 detect_lan_host() {

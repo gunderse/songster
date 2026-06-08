@@ -99,3 +99,30 @@ export function audioStreamUrl(id: string): string {
 export function artUrl(id: string): string {
   return `/audio/${id}/art`;
 }
+
+export interface PlexSettings {
+  url: string;
+  libraryName: string;
+  hasToken: boolean;
+}
+
+export function fetchPlexSettings(): Promise<PlexSettings> {
+  return http<PlexSettings>("/api/settings/plex");
+}
+
+export function savePlexSettings(url: string, libraryName: string): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/settings/plex", {
+    method: "POST",
+    body: JSON.stringify({ url, libraryName }),
+  });
+}
+
+export function requestPlexPin(): Promise<{ pinId: number; code: string }> {
+  return http<{ pinId: number; code: string }>("/api/settings/plex/auth/pin", {
+    method: "POST",
+  });
+}
+
+export function checkPlexAuth(pinId: number): Promise<{ ok: boolean; connected: boolean }> {
+  return http<{ ok: boolean; connected: boolean }>(`/api/settings/plex/auth/check/${pinId}`);
+}

@@ -14,6 +14,9 @@ import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { scanLibrary } from "./scan.js";
 import { getFacets, getSong, getStats, listSongs, setSongArt, updateSong } from "./songs-repo.js";
+import { getSetting, setSetting } from "./settings-repo.js";
+import { getPlexPin, checkPlexPin } from "./plex-service.js";
+import { randomUUID } from "node:crypto";
 
 const artDir = path.resolve(import.meta.dirname, "../../data/art");
 const ART_EXT: Record<string, string> = {
@@ -26,6 +29,58 @@ const ART_EXT: Record<string, string> = {
 
 export function createLibraryRouter(db: DatabaseType.Database): Router {
   const router = Router();
+
+  router.get("/settings/plex", (_req, res) => {
+    const url = getSetting(db, "plex_url", "");
+    const libraryName = getSetting(db, "plex_library_name", "Music");
+    const token = getSetting(db, "plex_token", "");
+    res.json({
+      url,
+      libraryName,
+      hasToken: token.length > 0,
+    });
+  });
+
+  router.post("/settings/plex", (req, res) => {
+    const { url, libraryName } = req.body;
+    if (typeof url !== "string" || typeof libraryName !== "string") {
+      res.status(400).json({ error: "Missing url or libraryName" });
+      return;
+    }
+    setSetting(db, "plex_url", url.trim());
+    setSetting(db, "plex_library_name", libraryName.trim());
+    res.json({ ok: true });
+  });
+
+  router.post("/settings/plex/auth/pin", async (_req, res) => {
+    let clientIdentifier = getSetting(db, "plex_client_identifier", "");
+    if (clientIdentifier.length === 0) {
+      clientIdentifier = randomUUID();
+      setSetting(db, "plex_client_identifier", clientIdentifier);
+    }
+    try {
+      const pinInfo = await getPlexPin(clientIdentifier);
+      res.json(pinInfo);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  router.get("/settings/plex/auth/check/:pinId", async (req, res) => {
+    const pinId = req.params.pinId;
+    const clientIdentifier = getSetting(db, "plex_client_identifier", "");
+    if (!pinId || clientIdentifier.length === 0) {
+      res.status(400).json({ error: "Invalid state" });
+      return;
+    }
+    const token = await checkPlexPin(pinId, clientIdentifier);
+    if (token) {
+      setSetting(db, "plex_token", token);
+      res.json({ ok: true, connected: true });
+    } else {
+      res.json({ ok: true, connected: false });
+    }
+  });
 
   router.get("/songs", (req, res) => {
     const parsed = songListQuerySchema.safeParse(req.query);

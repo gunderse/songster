@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { LibraryFacets } from "@songster/shared/library";
 import type { CreateAck, RoomConfig } from "@songster/shared/room";
 
-import { fetchFacets } from "../api";
+import { fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth } from "../api";
 import { socket } from "../socket";
 import { Roster } from "../components/Roster";
 import { hubUrl, joinUrl, useRoomState } from "../useRoom";
@@ -74,6 +74,8 @@ export function Admin() {
         >
           Create room
         </button>
+
+        <PlexSettingsForm />
       </main>
     );
   }
@@ -196,5 +198,146 @@ function ChipRow(props: {
         );
       })}
     </div>
+  );
+}
+
+function PlexSettingsForm() {
+  const [url, setUrl] = useState("");
+  const [libraryName, setLibraryName] = useState("Music");
+  const [hasToken, setHasToken] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  const [pinCode, setPinCode] = useState<string | null>(null);
+  const [pinId, setPinId] = useState<number | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPlexSettings()
+      .then((settings) => {
+        setUrl(settings.url);
+        setLibraryName(settings.libraryName);
+        setHasToken(settings.hasToken);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    try {
+      await savePlexSettings(url, libraryName);
+      setSuccess(true);
+    } catch (err) {
+      setError("Failed to save settings");
+    }
+  };
+
+  const handleConnect = async () => {
+    setError(null);
+    setPinCode(null);
+    setPinId(null);
+    try {
+      const pin = await requestPlexPin();
+      setPinCode(pin.code);
+      setPinId(pin.pinId);
+      setChecking(true);
+    } catch (err) {
+      setError("Failed to request PIN from Plex.tv");
+    }
+  };
+
+  useEffect(() => {
+    if (!checking || pinId === null) return;
+    let timer: number;
+    
+    const check = async () => {
+      try {
+        const res = await checkPlexAuth(pinId);
+        if (res.connected) {
+          setHasToken(true);
+          setChecking(false);
+          setPinCode(null);
+          setPinId(null);
+        } else {
+          timer = window.setTimeout(check, 3000);
+        }
+      } catch {
+        setChecking(false);
+      }
+    };
+    
+    timer = window.setTimeout(check, 3000);
+    return () => clearTimeout(timer);
+  }, [checking, pinId]);
+
+  if (loading) return <div className="text-slate-500 text-sm mt-6">Loading settings…</div>;
+
+  return (
+    <section className="mt-8 border-t border-slate-900 pt-6">
+      <h2 className="text-lg font-black font-heading text-slate-100">🔌 Plex Media Server (LAN)</h2>
+      <p className="text-xs text-slate-550 mt-0.5">Link a local Plex Music Library to import tracks into your game library.</p>
+      
+      <form onSubmit={handleSave} className="mt-4 space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-slate-500 font-bold">
+            Plex Server URL
+            <input
+              type="text"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="e.g. http://192.168.1.100:32400"
+              className="rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-sm text-slate-150 outline-none focus:border-indigo-500 transition shadow-inner"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-slate-500 font-bold">
+            Plex Library Name
+            <input
+              type="text"
+              value={libraryName}
+              onChange={(e) => setLibraryName(e.target.value)}
+              placeholder="e.g. Music"
+              className="rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-sm text-slate-150 outline-none focus:border-indigo-500 transition shadow-inner"
+            />
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            type="submit"
+            className="rounded-xl bg-slate-900 border border-slate-850 px-5 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 active:scale-[0.98] transition"
+          >
+            Save configurations
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleConnect}
+            className={`rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-md active:scale-[0.98] transition ${
+              hasToken ? "bg-emerald-600 hover:bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500"
+            }`}
+          >
+            {hasToken ? "✓ Plex Connected" : "🔗 Connect Plex"}
+          </button>
+          
+          {success && <span className="text-xs text-emerald-400 font-bold animate-pulse">✓ Saved!</span>}
+          {error && <span className="text-xs text-rose-400 font-bold">{error}</span>}
+        </div>
+      </form>
+
+      {pinCode && (
+        <div className="mt-5 border border-indigo-500/25 bg-indigo-500/5 rounded-2xl p-5 text-center shadow-lg">
+          <div className="text-[10px] font-black uppercase tracking-widest text-indigo-300">Plex.tv Link Code</div>
+          <div className="text-5xl font-black font-heading tracking-[0.25em] text-white my-3 animate-pulse">{pinCode}</div>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+            Go to <a href="https://plex.tv/link" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline font-black">plex.tv/link</a> in your browser and enter the code to link your account.
+          </p>
+          <div className="mt-4 text-[10px] font-bold uppercase tracking-wider text-indigo-400/80">Checking link status…</div>
+        </div>
+      )}
+    </section>
   );
 }
