@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { LibraryFacets } from "@songster/shared/library";
 import type { CreateAck, RoomConfig } from "@songster/shared/room";
 
-import { fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth } from "../api";
+import { fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth, testPlexSettings } from "../api";
 import { socket } from "../socket";
 import { Roster } from "../components/Roster";
 import { hubUrl, joinUrl, useRoomState } from "../useRoom";
@@ -241,6 +241,27 @@ function PlexSettingsForm() {
   const [checking, setChecking] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTest = async () => {
+    setError(null);
+    setSuccess(false);
+    setTestResult(null);
+    setTesting(true);
+    try {
+      const res = await testPlexSettings(url, libraryName);
+      if (res.success) {
+        setTestResult({ success: true, message: res.message || "Connected successfully!" });
+      } else {
+        setTestResult({ success: false, message: res.error || "Connection failed" });
+      }
+    } catch (err) {
+      setTestResult({ success: false, message: err instanceof Error ? err.message : "Failed to run connection test" });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   useEffect(() => {
     fetchPlexSettings()
@@ -342,6 +363,15 @@ function PlexSettingsForm() {
           >
             Save configurations
           </button>
+
+          <button
+            type="button"
+            onClick={handleTest}
+            disabled={testing}
+            className="rounded-xl bg-slate-900 border border-slate-850 px-5 py-2.5 text-xs font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-45 active:scale-[0.98] transition"
+          >
+            {testing ? "Testing..." : "Test Connection"}
+          </button>
           
           <button
             type="button"
@@ -357,6 +387,19 @@ function PlexSettingsForm() {
           {error && <span className="text-xs text-rose-400 font-bold">{error}</span>}
         </div>
       </form>
+
+      {testResult && (
+        <div className={`mt-4 p-4 rounded-xl border text-sm ${
+          testResult.success 
+            ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-300" 
+            : "border-rose-500/25 bg-rose-500/5 text-rose-300"
+        }`}>
+          <div className="font-bold flex items-center gap-1.5">
+            {testResult.success ? "✓ Connection Successful" : "⚠ Connection Failed"}
+          </div>
+          <p className="mt-1 text-xs opacity-90 leading-relaxed whitespace-pre-line">{testResult.message}</p>
+        </div>
+      )}
 
       {pinCode && (
         <div className="mt-5 border border-indigo-500/25 bg-indigo-500/5 rounded-2xl p-5 text-center shadow-lg">

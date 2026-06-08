@@ -21,6 +21,7 @@ import {
   suggestYear,
   uploadArt,
   type AiStatus,
+  type ScanSummary,
 } from "../api";
 
 type StatusFilter = SongStatus | "all";
@@ -39,6 +40,7 @@ export function Library() {
   const [facets, setFacets] = useState<LibraryFacets | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<ScanSummary | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimer = useRef<number | undefined>(undefined);
@@ -152,9 +154,20 @@ export function Library() {
               type="button"
               onClick={async () => {
                 setBusy("scan");
+                setScanResult(null);
                 try {
-                  await rescanLibrary();
+                  const summary = await rescanLibrary();
+                  setScanResult(summary);
                   await Promise.all([loadSongs(), refreshStats()]);
+                } catch (err) {
+                  setScanResult({
+                    scanned: 0,
+                    inserted: 0,
+                    updated: 0,
+                    flagged: 0,
+                    errors: 1,
+                    plexError: err instanceof Error ? err.message : "Library scan failed"
+                  });
                 } finally {
                   setBusy(null);
                 }
@@ -203,6 +216,58 @@ export function Library() {
           <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
         </div>
       </header>
+
+      {scanResult && (
+        <div className="mx-auto max-w-5xl px-4 pt-4">
+          <div className={`p-4 rounded-2xl border text-sm relative ${
+            scanResult.plexError 
+              ? "border-rose-500/25 bg-rose-500/5 text-rose-200" 
+              : "border-emerald-500/25 bg-emerald-500/5 text-emerald-200"
+          }`}>
+            <button 
+              type="button" 
+              onClick={() => setScanResult(null)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-white text-base"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+            <div className="font-bold flex items-center gap-1.5 text-base">
+              {scanResult.plexError ? "⚠ Library Scan Completed with Issues" : "✨ Library Scan Completed"}
+            </div>
+            
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs font-semibold text-slate-300">
+              <div className="bg-slate-900/50 p-2 rounded-xl border border-white/5">
+                <div className="text-slate-500 uppercase text-[9px] tracking-wider">Scanned</div>
+                <div className="text-sm font-bold text-white">{scanResult.scanned}</div>
+              </div>
+              <div className="bg-slate-900/50 p-2 rounded-xl border border-white/5">
+                <div className="text-slate-500 uppercase text-[9px] tracking-wider">Newly Inserted</div>
+                <div className="text-sm font-bold text-white">{scanResult.inserted}</div>
+              </div>
+              <div className="bg-slate-900/50 p-2 rounded-xl border border-white/5">
+                <div className="text-slate-500 uppercase text-[9px] tracking-wider">Updated</div>
+                <div className="text-sm font-bold text-white">{scanResult.updated}</div>
+              </div>
+              <div className="bg-slate-950 p-2 rounded-xl border border-white/5">
+                <div className="text-slate-500 uppercase text-[9px] tracking-wider">Flagged Outliers</div>
+                <div className="text-sm font-bold text-amber-400">{scanResult.flagged}</div>
+              </div>
+              <div className="bg-slate-950 p-2 rounded-xl border border-white/5">
+                <div className="text-slate-500 uppercase text-[9px] tracking-wider">Errors</div>
+                <div className="text-sm font-bold text-rose-400">{scanResult.errors}</div>
+              </div>
+            </div>
+
+            {scanResult.plexError && (
+              <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 leading-relaxed whitespace-pre-line">
+                <span className="font-bold block mb-0.5">Plex Scanning Issue:</span>
+                {scanResult.plexError}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <main className="relative z-10 mx-auto max-w-5xl divide-y divide-slate-900/50 px-4 pb-24">
         {songs.map((song) => (

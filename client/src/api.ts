@@ -74,6 +74,7 @@ export interface ScanSummary {
   updated: number;
   flagged: number;
   errors: number;
+  plexError?: string;
 }
 
 export function rescanLibrary(): Promise<ScanSummary> {
@@ -112,6 +113,19 @@ export function fetchPlexSettings(): Promise<PlexSettings> {
 
 export function savePlexSettings(url: string, libraryName: string): Promise<{ ok: boolean }> {
   return http<{ ok: boolean }>("/api/library/settings/plex", {
+    method: "POST",
+    body: JSON.stringify({ url, libraryName }),
+  });
+}
+
+export interface PlexTestResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export function testPlexSettings(url: string, libraryName: string): Promise<PlexTestResult> {
+  return http<PlexTestResult>("/api/library/settings/plex/test", {
     method: "POST",
     body: JSON.stringify({ url, libraryName }),
   });

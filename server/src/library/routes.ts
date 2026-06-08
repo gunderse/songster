@@ -52,6 +52,91 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     res.json({ ok: true });
   });
 
+  router.post("/settings/plex/test", async (req, res) => {
+    const { url, libraryName } = req.body;
+    if (typeof url !== "string" || typeof libraryName !== "string") {
+      res.status(400).json({ error: "Missing url or libraryName" });
+      return;
+    }
+
+    const token = getSetting(db, "plex_token", "");
+    if (!token) {
+      res.status(400).json({ error: "Plex is not connected. Please connect Plex first." });
+      return;
+    }
+
+    const cleanPlexUrl = url.trim().replace(/\/+$/, "");
+
+    try {
+      const response = await fetch(`${cleanPlexUrl}/library/sections`, {
+        headers: {
+          "Accept": "application/json",
+          "X-Plex-Token": token,
+        },
+      });
+
+      if (!response.ok) {
+        res.json({
+          success: false,
+          error: `Plex server returned status ${response.status} ${response.statusText}`
+        });
+        return;
+      }
+
+      const json = await response.json() as any;
+      const dirs = json.MediaContainer?.Directory || [];
+      const section = dirs.find(
+        (dir: any) => dir.title.toLowerCase() === libraryName.toLowerCase()
+      );
+
+      if (!section) {
+        const available = dirs.map((d: any) => d.title).join(", ");
+        res.json({
+          success: false,
+          error: `Library section "${libraryName}" not found on server. Available sections: ${available || "none"}`
+        });
+        return;
+      }
+
+      // Found the library. Let's get the track count if possible
+      const tracksResponse = await fetch(`${cleanPlexUrl}/library/sections/${section.key}/all?type=10&X-Plex-Token=${token}`, {
+        headers: {
+          "Accept": "application/json",
+        },
+      });
+
+      let trackCount = 0;
+      if (tracksResponse.ok) {
+        const tracksJson = await tracksResponse.json() as any;
+        trackCount = tracksJson.MediaContainer?.Metadata?.length || 0;
+      }
+
+      res.json({
+        success: true,
+        message: `Successfully connected! Found library "${section.title}" with ${trackCount} tracks.`
+      });
+
+    } catch (err: any) {
+      logger.error({ url: cleanPlexUrl, error: err.message }, "Plex connection test failed");
+      let friendlyError = err.message;
+      if (err.cause) {
+        if (err.cause.code === "EHOSTUNREACH") {
+          friendlyError = `Host is unreachable (EHOSTUNREACH). Make sure your Plex Media Server is powered on, connected to the same LAN (${url}), and not asleep.`;
+        } else if (err.cause.code === "ECONNREFUSED") {
+          friendlyError = `Connection refused (ECONNREFUSED). Verify Plex is running on port 32400 (or the port you specified) and isn't blocked by a firewall.`;
+        } else if (err.cause.code === "ENOTFOUND") {
+          friendlyError = `Host not found (ENOTFOUND). Please verify the server IP/domain name: ${url}`;
+        } else {
+          friendlyError = `${err.message} (${err.cause.code})`;
+        }
+      }
+      res.json({
+        success: false,
+        error: friendlyError
+      });
+    }
+  });
+
   router.post("/settings/plex/auth/pin", async (_req, res) => {
     let clientIdentifier = getSetting(db, "plex_client_identifier", "");
     if (clientIdentifier.length === 0) {

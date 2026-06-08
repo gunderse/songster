@@ -24,6 +24,7 @@ export interface ScanSummary {
   flagged: number;
   withArt: number;
   errors: number;
+  plexError?: string;
 }
 
 interface SongUpsertRow {
@@ -90,6 +91,88 @@ async function* walkAudioFiles(root: string): AsyncGenerator<string> {
       yield fullPath;
     }
   }
+}
+
+
+function parsePlexFilePath(filePath: string): { title: string; artist: string | null; album: string | null; year: number | null } {
+  if (!filePath) {
+    return { title: "Unknown Track", artist: null, album: null, year: null };
+  }
+
+  // Normalize separators
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const parts = normalizedPath.split("/");
+  const fileNameWithExt = parts[parts.length - 1] || "";
+  const parentFolder = parts[parts.length - 2] || "";
+  const grandparentFolder = parts[parts.length - 3] || "";
+
+  // 1. Get base filename without extension
+  const extIndex = fileNameWithExt.lastIndexOf('.');
+  let fileName = extIndex !== -1 ? fileNameWithExt.slice(0, extIndex) : fileNameWithExt;
+
+  // Clean up common download suffixes from filename first to avoid interfering with splits
+  fileName = fileName.replace(/[- ]*www\.[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+/ig, "");
+  fileName = fileName.trim();
+
+  // Strip track numbers/disc prefixes at the beginning
+  // Matches "01 - Title", "01. Title", "01 Title", "1-01 Title", "A1 - Title"
+  fileName = fileName.replace(/^[0-9]+[-. ]+/, "");
+  fileName = fileName.replace(/^[0-9]+[-]+/, "");
+  fileName = fileName.replace(/^[a-zA-Z][0-9]+[-. ]+/, "");
+  fileName = fileName.trim();
+
+  let artist: string | null = null;
+  let title = fileName;
+
+  // If the filename contains " - ", split it into artist and title
+  const dashIndex = fileName.indexOf(" - ");
+  if (dashIndex !== -1) {
+    const leftPart = fileName.slice(0, dashIndex).trim();
+    const rightPart = fileName.slice(dashIndex + 3).trim();
+    if (leftPart.length > 0 && rightPart.length > 0) {
+      artist = leftPart;
+      title = rightPart;
+    }
+  }
+
+  // 2. Parse Album
+  let album: string | null = parentFolder ? parentFolder.trim() : null;
+  if (album) {
+    album = album.replace(/[- ]*www\.[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+/ig, "");
+    album = album.replace(/\+ cover/gi, "");
+    album = album.trim();
+  }
+
+  // 3. Parse Year from Album folder (e.g. "I Robot (Soundtrack) 2004")
+  let year: number | null = null;
+  if (album) {
+    const yearMatch = album.match(/\b(19\d\d|20\d\d)\b/);
+    if (yearMatch && yearMatch[1]) {
+      year = Number(yearMatch[1]);
+      // Remove year from album name
+      album = album.replace(/\b(19\d\d|20\d\d)\b/, "").replace(/\(\s*\)/g, "").replace(/\[\s*\]/g, "").trim();
+    }
+  }
+
+  // 4. Parse Artist from grandparent folder if not already parsed from filename
+  if (!artist && grandparentFolder) {
+    const commonRoots = new Set(["music", "multimedia", "audio", "sound", "songs", "cachedev1_data", "share", "home", "users", "volume1", "volume2"]);
+    const cleanGrandparent = grandparentFolder.trim();
+    if (!commonRoots.has(cleanGrandparent.toLowerCase())) {
+      artist = cleanGrandparent;
+    }
+  }
+
+  // Common fallbacks for soundtrack folders
+  if (!artist && album && (album.toLowerCase().includes("soundtrack") || album.toLowerCase().includes("ost"))) {
+    artist = "Soundtrack";
+  }
+
+  if (title.toLowerCase() === "file" || title.length === 0) {
+    title = "Unknown Track";
+  }
+
+  return { title, artist, album, year };
 }
 
 async function scanPlexLibrary(
@@ -168,14 +251,30 @@ async function scanPlexLibrary(
         }
       }
       
-      const parsedYear = track.year || (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null);
+      const partFile = part.file || "";
+      const pathMeta = parsePlexFilePath(partFile);
+
+      let finalTitle = track.title || "";
+      if (finalTitle.length === 0 || finalTitle.toLowerCase() === "file") {
+        finalTitle = pathMeta.title || titleFromFileName(relativePath);
+      }
+
+      const finalArtist = track.grandparentTitle || pathMeta.artist || null;
+      const finalAlbum = track.parentTitle || pathMeta.album || null;
+
+      const parsedYear = track.year || 
+                        track.parentYear || 
+                        (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
+                        pathMeta.year || 
+                        null;
+
       const durationS = track.duration ? Math.round(track.duration / 1000) : null;
       const primaryGenre = track.Genre?.[0]?.tag || section.title;
 
       const flags = computeSuspiciousFlags({
-        album: track.parentTitle || null,
-        title: track.title || null,
-        artist: track.grandparentTitle || null,
+        album: finalAlbum,
+        title: finalTitle,
+        artist: finalArtist,
         rawYear: parsedYear,
         durationS,
       });
@@ -184,9 +283,9 @@ async function scanPlexLibrary(
       const row: SongUpsertRow = {
         id,
         file_path: relativePath,
-        title: track.title || titleFromFileName(relativePath),
-        artist: track.grandparentTitle || null,
-        album: track.parentTitle || null,
+        title: finalTitle,
+        artist: finalArtist,
+        album: finalAlbum,
         genre: primaryGenre,
         tag_genre: track.Genre?.[0]?.tag || null,
         raw_year: parsedYear,
@@ -214,6 +313,7 @@ async function scanPlexLibrary(
     }
   }
 }
+
 
 export async function scanLibrary(db: DatabaseType.Database, options: ScanOptions): Promise<ScanSummary> {
   const musicDir = path.resolve(options.musicDir);
@@ -342,6 +442,7 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     } catch (error) {
       logger.error({ error: (error as Error).message }, "Plex scan failed");
       summary.errors += 1;
+      summary.plexError = (error as Error).message;
     }
   }
 
