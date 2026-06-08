@@ -22,6 +22,7 @@ export const roomConfigSchema = z.object({
   /** Per-turn timer (s). 0 disables the auto-resolve. */
   turnTimerS: z.number().int().min(0).max(180).default(45),
   deck: deckFilterSchema.default({}),
+  musicSource: z.enum(["local", "plex", "all"]).default("all"),
 });
 export type RoomConfig = z.infer<typeof roomConfigSchema>;
 

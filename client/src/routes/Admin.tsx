@@ -21,6 +21,7 @@ export function Admin() {
   const [turnTimer, setTurnTimer] = useState(45);
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
+  const [musicSource, setMusicSource] = useState<"local" | "plex" | "all">("all");
 
   useEffect(() => {
     fetchFacets().then(setFacets).catch(() => undefined);
@@ -39,6 +40,7 @@ export function Admin() {
       snippetLenS: snippetLen,
       turnTimerS: turnTimer,
       deck: { genres: genres.length > 0 ? genres : undefined, tags: tags.length > 0 ? tags : undefined },
+      musicSource,
     };
     if (!socket.connected) socket.connect();
     socket.emit("room:create", { config }, (res: CreateAck) => {
@@ -59,6 +61,33 @@ export function Admin() {
           <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
           <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
           <NumberField label="Turn timer s (0=off)" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
+        </div>
+
+        <div className="mt-6">
+          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Music Source</label>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {[
+              ["all", "All Songs (Local + Plex)"],
+              ["local", "Local Library Only"],
+              ["plex", "Plex Server Only"],
+            ].map(([value, label]) => {
+              const active = musicSource === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMusicSource(value as any)}
+                  className={`flex-1 min-w-[150px] rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${
+                    active
+                      ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20"
+                      : "bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <Section title="Deck filter (optional)" hint="Restrict the song pool by genre / tag. Leave empty for all approved songs.">

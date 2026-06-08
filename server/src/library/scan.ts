@@ -271,27 +271,10 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
   const plexLibraryName = plexLibraryNameEnv || getSetting(db, "plex_library_name", "Music");
   const plexScanLimit = plexScanLimitEnv ? Number(plexScanLimitEnv) : Number(getSetting(db, "plex_scan_limit", "100"));
 
-  if (plexUrl.length > 0 && plexToken.length > 0) {
-    try {
-      await scanPlexLibrary(
-        db,
-        plexUrl,
-        plexToken,
-        plexLibraryName,
-        plexScanLimit,
-        summary,
-        upsert,
-        ensureGenre,
-        existing
-      );
-    } catch (error) {
-      logger.error({ error: (error as Error).message }, "Plex scan failed");
-      summary.errors += 1;
-    }
-  } else {
-    for await (const fullPath of walkAudioFiles(musicDir)) {
-      summary.scanned += 1;
-      const relativePath = path.relative(musicDir, fullPath);
+  // 1. Scan local files
+  for await (const fullPath of walkAudioFiles(musicDir)) {
+    summary.scanned += 1;
+    const relativePath = path.relative(musicDir, fullPath);
 
     try {
       const meta = await extractMetadata(fullPath);
@@ -340,6 +323,25 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
       summary.errors += 1;
       logger.warn({ file: relativePath, error: (error as Error).message }, "failed to ingest file");
     }
+  }
+
+  // 2. Scan Plex library if configured
+  if (plexUrl.length > 0 && plexToken.length > 0) {
+    try {
+      await scanPlexLibrary(
+        db,
+        plexUrl,
+        plexToken,
+        plexLibraryName,
+        plexScanLimit,
+        summary,
+        upsert,
+        ensureGenre,
+        existing
+      );
+    } catch (error) {
+      logger.error({ error: (error as Error).message }, "Plex scan failed");
+      summary.errors += 1;
     }
   }
 

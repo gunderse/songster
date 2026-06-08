@@ -336,7 +336,7 @@ export class RoomManager {
     const room = this.getRoom(code);
     if (room === undefined || room.status !== "lobby") return room;
 
-    const seeds = sampleSongs(this.db, room.config.deck, room.teams.length, []);
+    const seeds = sampleSongs(this.db, room.config.deck, room.config.musicSource, room.teams.length, []);
     const used = new Set<string>();
     const teams: GameTeam[] = room.teams.map((team, i) => {
       const seed = seeds[i];
@@ -428,7 +428,7 @@ export class RoomManager {
     if (game.active.placerId !== player.id || player.tokens <= 0) return room;
 
     player.tokens -= 1;
-    const song = sampleOne(this.db, room.config.deck, [...game.used]);
+    const song = sampleOne(this.db, room.config.deck, room.config.musicSource, [...game.used]);
     if (song === null) {
       this.finishGame(room);
       return room;
@@ -901,7 +901,7 @@ export class RoomManager {
       return;
     }
 
-    const song = sampleOne(this.db, room.config.deck, [...game.used]);
+    const song = sampleOne(this.db, room.config.deck, room.config.musicSource, [...game.used]);
     if (song === null) {
       this.finishGame(room);
       return;
@@ -991,7 +991,7 @@ export class RoomManager {
       config: room.config,
       teams,
       players,
-      poolSize: countAvailable(this.db, room.config.deck, []),
+      poolSize: countAvailable(this.db, room.config.deck, room.config.musicSource, []),
       game: this.gameView(room),
     };
   }
@@ -1042,7 +1042,7 @@ export class RoomManager {
       activeTurn: active,
       lastResult: game.lastResult,
       winnerTeamId: game.winnerTeamId,
-      remaining: Math.max(0, countAvailable(this.db, room.config.deck, []) - game.used.size),
+      remaining: Math.max(0, countAvailable(this.db, room.config.deck, room.config.musicSource, []) - game.used.size),
       countdownEndsAt: game.countdownEndsAt,
       commentaryPending: game.active?.commentaryPending ?? false,
     };
