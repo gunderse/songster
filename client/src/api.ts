@@ -107,22 +107,22 @@ export interface PlexSettings {
 }
 
 export function fetchPlexSettings(): Promise<PlexSettings> {
-  return http<PlexSettings>("/api/settings/plex");
+  return http<PlexSettings>("/api/library/settings/plex");
 }
 
 export function savePlexSettings(url: string, libraryName: string): Promise<{ ok: boolean }> {
-  return http<{ ok: boolean }>("/api/settings/plex", {
+  return http<{ ok: boolean }>("/api/library/settings/plex", {
     method: "POST",
     body: JSON.stringify({ url, libraryName }),
   });
 }
 
 export function requestPlexPin(): Promise<{ pinId: number; code: string }> {
-  return http<{ pinId: number; code: string }>("/api/settings/plex/auth/pin", {
+  return http<{ pinId: number; code: string }>("/api/library/settings/plex/auth/pin", {
     method: "POST",
   });
 }
 
 export function checkPlexAuth(pinId: number): Promise<{ ok: boolean; connected: boolean }> {
-  return http<{ ok: boolean; connected: boolean }>(`/api/settings/plex/auth/check/${pinId}`);
+  return http<{ ok: boolean; connected: boolean }>(`/api/library/settings/plex/auth/check/${pinId}`);
 }
