@@ -31,7 +31,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
   const router = Router();
 
   router.get("/settings/plex", (_req, res) => {
-    const url = getSetting(db, "plex_url", "");
+    const url = getSetting(db, "plex_url", "http://192.168.86.100:32400");
     const libraryName = getSetting(db, "plex_library_name", "Music");
     const token = getSetting(db, "plex_token", "");
     res.json({

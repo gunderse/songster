@@ -231,7 +231,7 @@ function ChipRow(props: {
 }
 
 function PlexSettingsForm() {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState("http://192.168.86.100:32400");
   const [libraryName, setLibraryName] = useState("Music");
   const [hasToken, setHasToken] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -245,7 +245,7 @@ function PlexSettingsForm() {
   useEffect(() => {
     fetchPlexSettings()
       .then((settings) => {
-        setUrl(settings.url);
+        setUrl(settings.url || "http://192.168.86.100:32400");
         setLibraryName(settings.libraryName);
         setHasToken(settings.hasToken);
         setLoading(false);
@@ -275,7 +275,7 @@ function PlexSettingsForm() {
       setPinId(pin.pinId);
       setChecking(true);
     } catch (err) {
-      setError("Failed to request PIN from Plex.tv");
+      setError(err instanceof Error ? err.message : "Failed to request PIN from Plex.tv");
     }
   };
 
