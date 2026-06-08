@@ -21,7 +21,7 @@ export async function getPlexPin(clientIdentifier: string): Promise<{ pinId: num
         "X-Plex-Version": "1.0.0",
         "X-Plex-Client-Identifier": clientIdentifier,
       },
-      body: JSON.stringify({ strong: true }),
+      body: JSON.stringify({ strong: false }),
     });
 
     if (!response.ok) {
