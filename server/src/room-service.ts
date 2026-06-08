@@ -336,6 +336,13 @@ export class RoomManager {
     const room = this.getRoom(code);
     if (room === undefined || room.status !== "lobby") return room;
 
+    const minSongs = room.teams.length + 1;
+    const available = countAvailable(this.db, room.config.deck, room.config.musicSource, []);
+    if (available < minSongs) {
+      logger.warn({ code, available, minSongs }, "cannot start game: insufficient approved songs");
+      return room;
+    }
+
     const seeds = sampleSongs(this.db, room.config.deck, room.config.musicSource, room.teams.length, []);
     const used = new Set<string>();
     const teams: GameTeam[] = room.teams.map((team, i) => {

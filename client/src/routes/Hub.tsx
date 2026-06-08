@@ -159,7 +159,9 @@ export function Hub({ code }: { code: string }) {
   const countdownEndsAt = room?.game?.countdownEndsAt ?? null;
   const commentaryPending = room?.game?.commentaryPending ?? false;
   const playerCount = room?.players.filter((p) => p.connected || p.isBot).length ?? 0;
-  const canStart = inLobby && playerCount >= 1; // at least one player; teams auto-balance
+  const minSongsNeeded = room ? room.teams.length + 1 : 0;
+  const hasEnoughSongs = room ? room.poolSize >= minSongsNeeded : false;
+  const canStart = inLobby && playerCount >= 1 && hasEnoughSongs;
 
   return (
     <main className="relative min-h-dvh overflow-hidden bg-slate-950 p-6 text-slate-100 sm:p-10">
@@ -193,7 +195,15 @@ export function Hub({ code }: { code: string }) {
 
       <div className="relative z-10 mx-auto max-w-6xl">
         {inLobby ? (
-          <LobbyView code={code} qr={qr} room={room} canStart={canStart} playerCount={playerCount} />
+          <LobbyView
+            code={code}
+            qr={qr}
+            room={room}
+            canStart={canStart}
+            playerCount={playerCount}
+            hasEnoughSongs={hasEnoughSongs}
+            minSongsNeeded={minSongsNeeded}
+          />
         ) : (
           <>
             <div className="mb-6 flex items-center justify-between text-slate-500 border-b border-slate-900 pb-4">
@@ -217,12 +227,16 @@ function LobbyView({
   room,
   canStart,
   playerCount,
+  hasEnoughSongs,
+  minSongsNeeded,
 }: {
   code: string;
   qr: string | null;
   room: ReturnType<typeof useRoomState>;
   canStart: boolean;
   playerCount: number;
+  hasEnoughSongs: boolean;
+  minSongsNeeded: number;
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -266,10 +280,12 @@ function LobbyView({
               >
                 ▶ Start the show
               </button>
-              <p className="text-xs tracking-wider uppercase text-slate-500">
-                {canStart
-                  ? `${playerCount} player${playerCount > 1 ? "s" : ""} in lobby · countdown starts on launch`
-                  : "Waiting for at least one player to join"}
+              <p className="text-xs tracking-wider uppercase text-slate-500 text-center max-w-md">
+                {!hasEnoughSongs && room
+                  ? `⚠ Insufficient approved songs (${room.poolSize}/${minSongsNeeded} needed). Go to /library to approve songs.`
+                  : canStart
+                    ? `${playerCount} player${playerCount > 1 ? "s" : ""} in lobby · countdown starts on launch`
+                    : "Waiting for at least one player to join"}
               </p>
             </div>
           </>
