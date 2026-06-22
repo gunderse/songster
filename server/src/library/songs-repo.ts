@@ -40,12 +40,13 @@ function toDto(row: SongRow, genres: string[], tags: string[]): LibrarySong {
     tags,
     rawYear: row.raw_year,
     year: row.year,
-    snippetStartS: row.snippet_start_s,
+    snippetStartS: row.snippet_start_s ?? 30,
     snippetLenS: row.snippet_len_s,
     durationS: row.duration_s,
     hasArt: row.art_path !== null,
     status: (row.status as LibrarySong["status"]) ?? "unreviewed",
     suspiciousFlags: parseFlags(row.suspicious_flags),
+    source: row.file_path.startsWith("plex://") ? "plex" : "local",
   };
 }
 
@@ -103,6 +104,13 @@ export function listSongs(db: DatabaseType.Database, query: SongListQuery): Libr
   if (query.tag !== undefined && query.tag.length > 0) {
     where.push("id IN (SELECT song_id FROM song_tags WHERE tag = @tag)");
     params.tag = query.tag;
+  }
+  if (query.source !== undefined && query.source !== "all") {
+    if (query.source === "local") {
+      where.push("file_path NOT LIKE 'plex://%'");
+    } else if (query.source === "plex") {
+      where.push("file_path LIKE 'plex://%'");
+    }
   }
 
   const orderBy =

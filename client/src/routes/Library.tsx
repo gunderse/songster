@@ -20,6 +20,10 @@ import {
   rescanLibrary,
   suggestYear,
   uploadArt,
+  searchPlex,
+  importPlex,
+  deleteSong,
+  plexArtUrl,
   type AiStatus,
   type ScanSummary,
 } from "../api";
@@ -42,10 +46,24 @@ export function Library() {
   const [busy, setBusy] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanSummary | null>(null);
 
+  // Source filter + Tab selection
+  const [sourceFilter, setSourceFilter] = useState<"all" | "local" | "plex">("all");
+  const [activeTab, setActiveTab] = useState<"library" | "plex">("library");
+
+  // Plex Browser state
+  const [plexSearch, setPlexSearch] = useState("");
+  const [plexSort, setPlexSort] = useState("titleSort");
+  const [plexStart, setPlexStart] = useState(0);
+  const [plexResults, setPlexResults] = useState<any[]>([]);
+  const [plexTotalSize, setPlexTotalSize] = useState(0);
+  const [plexLoading, setPlexLoading] = useState(false);
+  const plexPageSize = 50;
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const stopTimer = useRef<number | undefined>(undefined);
   const pendingStart = useRef(0);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [previewingPlexKey, setPreviewingPlexKey] = useState<string | null>(null);
 
   const loadSongs = useCallback(async () => {
     setLoading(true);
@@ -57,12 +75,27 @@ export function Library() {
         search: search.trim() || undefined,
         genre: genreFilter || undefined,
         tag: tagFilter || undefined,
+        source: sourceFilter,
       });
       setSongs(list);
     } finally {
       setLoading(false);
     }
-  }, [status, flaggedOnly, sort, search, genreFilter, tagFilter]);
+  }, [status, flaggedOnly, sort, search, genreFilter, tagFilter, sourceFilter]);
+
+  const loadPlexSongs = useCallback(async (startOffset = plexStart) => {
+    setPlexLoading(true);
+    try {
+      const res = await searchPlex(plexSearch.trim(), plexSort, startOffset, plexPageSize);
+      setPlexResults(res.results);
+      setPlexTotalSize(res.totalSize);
+      setPlexStart(startOffset);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPlexLoading(false);
+    }
+  }, [plexSearch, plexSort, plexStart]);
 
   const refreshStats = useCallback(async () => {
     setStats(await fetchStats());
@@ -82,10 +115,22 @@ export function Library() {
     fetchAiStatus().then(setAi).catch(() => setAi({ ok: false, model: "?", error: "unreachable" }));
   }, [refreshStats, refreshFacets]);
 
+  useEffect(() => {
+    if (activeTab === "plex") {
+      void loadPlexSongs(0);
+    }
+  }, [activeTab, plexSort, loadPlexSongs]);
+
+  const handlePlexSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void loadPlexSongs(0);
+  };
+
   const stopPreview = useCallback(() => {
     if (stopTimer.current !== undefined) window.clearTimeout(stopTimer.current);
     audioRef.current?.pause();
     setPreviewingId(null);
+    setPreviewingPlexKey(null);
   }, []);
 
   const previewSong = useCallback(
@@ -96,8 +141,8 @@ export function Library() {
         stopPreview();
         return;
       }
-      if (stopTimer.current !== undefined) window.clearTimeout(stopTimer.current);
-      pendingStart.current = song.snippetStartS ?? 0;
+      stopPreview();
+      pendingStart.current = song.snippetStartS ?? 30;
       audio.src = audioStreamUrl(song.id);
       audio.load();
       setPreviewingId(song.id);
@@ -113,6 +158,33 @@ export function Library() {
       stopTimer.current = window.setTimeout(stopPreview, lengthMs + 800);
     },
     [previewingId, stopPreview],
+  );
+
+  const previewPlexTrack = useCallback(
+    (track: { key: string }) => {
+      const audio = audioRef.current;
+      if (audio === null) return;
+      if (previewingPlexKey === track.key) {
+        stopPreview();
+        return;
+      }
+      stopPreview();
+      pendingStart.current = 30;
+      audio.src = `/api/library/plex/preview?key=${encodeURIComponent(track.key)}`;
+      audio.load();
+      setPreviewingPlexKey(track.key);
+      const lengthMs = 15 * 1000;
+      audio.onloadedmetadata = () => {
+        try {
+          audio.currentTime = pendingStart.current;
+        } catch {
+          // seeking unsupported; play from start
+        }
+        void audio.play();
+      };
+      stopTimer.current = window.setTimeout(stopPreview, lengthMs + 800);
+    },
+    [previewingPlexKey, stopPreview],
   );
 
   const uploadArtFor = useCallback(async (id: string, file: File) => {
@@ -135,6 +207,20 @@ export function Library() {
     },
     [refreshStats, refreshFacets],
   );
+
+  const deleteSongFor = useCallback(async (id: string) => {
+    setBusy(id);
+    try {
+      await deleteSong(id);
+      setSongs((prev) => prev.filter((s) => s.id !== id));
+      void refreshStats();
+      void refreshFacets();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete song");
+    } finally {
+      setBusy(null);
+    }
+  }, [refreshStats, refreshFacets]);
 
   return (
     <div className="relative min-h-dvh bg-slate-950 text-slate-100 overflow-x-hidden">
@@ -180,41 +266,138 @@ export function Library() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-          <Segmented<StatusFilter>
-            value={status}
-            onChange={setStatus}
-            options={[
-              ["all", "All"],
-              ["unreviewed", "Unreviewed"],
-              ["approved", "Approved"],
-              ["excluded", "Excluded"],
-            ]}
-          />
-          <label className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 cursor-pointer hover:border-slate-850 hover:bg-slate-900 transition">
-            <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
-            <span className="font-semibold text-slate-350">Flagged only</span>
-          </label>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title / artist / album…"
-            className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
-          />
-          <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
-          <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+        {/* Tabs */}
+        <div className="mt-4 flex gap-4 border-b border-slate-900 pb-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("library");
+              stopPreview();
+            }}
+            className={`pb-2 text-sm font-bold border-b-2 transition ${
+              activeTab === "library"
+                ? "border-indigo-500 text-indigo-400"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
           >
-            <option value="flagged">Sort: needs review</option>
-            <option value="title">Sort: title</option>
-            <option value="artist">Sort: artist</option>
-            <option value="year">Sort: year</option>
-          </select>
-          <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
+            Game Library ({songs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("plex");
+              stopPreview();
+            }}
+            className={`pb-2 text-sm font-bold border-b-2 transition ${
+              activeTab === "plex"
+                ? "border-amber-500 text-amber-400"
+                : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Plex Server Browser
+          </button>
         </div>
+
+        {activeTab === "library" ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+            <Segmented<StatusFilter>
+              value={status}
+              onChange={setStatus}
+              options={[
+                ["all", "All Statuses"],
+                ["unreviewed", "Unreviewed"],
+                ["approved", "Approved"],
+                ["excluded", "Excluded"],
+              ]}
+            />
+            
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as any)}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-350 outline-none focus:border-indigo-500 transition cursor-pointer"
+            >
+              <option value="all">All Sources</option>
+              <option value="local">📁 Local Only</option>
+              <option value="plex">🔌 Plex Only</option>
+            </select>
+
+            <label className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 cursor-pointer hover:border-slate-850 hover:bg-slate-900 transition">
+              <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
+              <span className="font-semibold text-slate-350">Flagged only</span>
+            </label>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search title / artist / album…"
+              className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
+            />
+            <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
+            <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-300 outline-none focus:border-indigo-500 transition cursor-pointer"
+            >
+              <option value="flagged">Sort: needs review</option>
+              <option value="title">Sort: title</option>
+              <option value="artist">Sort: artist</option>
+              <option value="year">Sort: year</option>
+            </select>
+            <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
+          </div>
+        ) : (
+          <form onSubmit={handlePlexSearchSubmit} className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+            <input
+              value={plexSearch}
+              onChange={(e) => setPlexSearch(e.target.value)}
+              placeholder="Search Plex by title / artist / album…"
+              className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 transition"
+            >
+              Search
+            </button>
+            <select
+              value={plexSort}
+              onChange={(e) => setPlexSort(e.target.value)}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-350 outline-none focus:border-indigo-500 transition cursor-pointer"
+            >
+              <option value="titleSort">Sort: Title (A-Z)</option>
+              <option value="artist.titleSort,album.titleSort,track.index">Sort: Artist (A-Z)</option>
+              <option value="album.titleSort,track.index">Sort: Album (A-Z)</option>
+              <option value="year:desc">Sort: Year (Newest)</option>
+              <option value="year">Sort: Year (Oldest)</option>
+              <option value="addedAt:desc">Sort: Date Added</option>
+            </select>
+
+            {/* Pagination Controls */}
+            {plexTotalSize > 0 && (
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  disabled={plexStart === 0 || plexLoading}
+                  onClick={() => loadPlexSongs(Math.max(0, plexStart - plexPageSize))}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  ◀ Prev
+                </button>
+                <span className="text-xs text-slate-400 font-semibold">
+                  {plexStart + 1} - {Math.min(plexStart + plexPageSize, plexTotalSize)} of {plexTotalSize}
+                </span>
+                <button
+                  type="button"
+                  disabled={plexStart + plexPageSize >= plexTotalSize || plexLoading}
+                  onClick={() => loadPlexSongs(plexStart + plexPageSize)}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  Next ▶
+                </button>
+              </div>
+            )}
+          </form>
+        )}
       </header>
 
       {scanResult && (
@@ -270,20 +453,68 @@ export function Library() {
       )}
 
       <main className="relative z-10 mx-auto max-w-5xl divide-y divide-slate-900/50 px-4 pb-24">
-        {songs.map((song) => (
-          <SongRow
-            key={song.id}
-            song={song}
-            busy={busy === song.id}
-            previewing={previewingId === song.id}
-            aiAvailable={ai?.ok === true && ai.modelAvailable === true}
-            onPreview={() => previewSong(song)}
-            onPatch={(update) => applyPatch(song.id, update)}
-            onUploadArt={(file) => uploadArtFor(song.id, file)}
-          />
-        ))}
-        {!loading && songs.length === 0 && (
-          <p className="py-16 text-center text-slate-500">No songs match these filters.</p>
+        {activeTab === "library" ? (
+          <>
+            {songs.map((song) => (
+              <SongRow
+                key={song.id}
+                song={song}
+                busy={busy === song.id}
+                previewing={previewingId === song.id}
+                aiAvailable={ai?.ok === true && ai.modelAvailable === true}
+                onPreview={() => previewSong(song)}
+                onPatch={(update) => applyPatch(song.id, update)}
+                onUploadArt={(file) => uploadArtFor(song.id, file)}
+                onDelete={() => deleteSongFor(song.id)}
+              />
+            ))}
+            {!loading && songs.length === 0 && (
+              <p className="py-16 text-center text-slate-500">No songs match these filters.</p>
+            )}
+          </>
+        ) : (
+          <div className="divide-y divide-slate-900/50">
+            {plexLoading ? (
+              <p className="py-16 text-center text-slate-400">Loading Plex library tracks...</p>
+            ) : (
+              <>
+                {plexResults.map((track) => (
+                  <PlexTrackRow
+                    key={track.ratingKey}
+                    track={track}
+                    previewing={previewingPlexKey === track.key}
+                    onPreview={() => previewPlexTrack(track)}
+                    onImport={async (status) => {
+                      setBusy(track.ratingKey);
+                      try {
+                        const res = await importPlex(track.ratingKey, status);
+                        setPlexResults((prev) =>
+                          prev.map((t) =>
+                            t.ratingKey === track.ratingKey
+                              ? { ...t, isImported: true, songId: res.songId, status }
+                              : t
+                          )
+                        );
+                        void loadSongs();
+                        void refreshStats();
+                        void refreshFacets();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "Import failed");
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                    busy={busy === track.ratingKey}
+                  />
+                ))}
+                {plexResults.length === 0 && (
+                  <p className="py-16 text-center text-slate-500">
+                    No Plex tracks found. Try searching or adjusting your query.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         )}
       </main>
     </div>
@@ -298,8 +529,9 @@ function SongRow(props: {
   onPreview: () => void;
   onPatch: (update: SongUpdate) => Promise<LibrarySong>;
   onUploadArt: (file: File) => Promise<void>;
+  onDelete: () => void;
 }) {
-  const { song, busy, previewing, aiAvailable, onPreview, onPatch, onUploadArt } = props;
+  const { song, busy, previewing, aiAvailable, onPreview, onPatch, onUploadArt, onDelete } = props;
   const [year, setYear] = useState<string>(song.year?.toString() ?? "");
   const [start, setStart] = useState<string>(song.snippetStartS?.toString() ?? "");
   const [title, setTitle] = useState(song.title ?? "");
@@ -364,7 +596,7 @@ function SongRow(props: {
 
   return (
     <div className={`grid grid-cols-[3rem_1fr_auto] gap-3 border-l-4 ${statusTint} py-3 pl-3 pr-1`}>
-      <div className="relative h-12 w-12">
+      <div className="relative h-12 w-12 shrink-0">
         <button
           type="button"
           onClick={onPreview}
@@ -403,6 +635,13 @@ function SongRow(props: {
 
       <div className="min-w-0">
         <div className="flex items-center gap-2">
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold ${
+            song.source === "plex" 
+              ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" 
+              : "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+          }`}>
+            {song.source === "plex" ? "🔌 Plex" : "📁 Local"}
+          </span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -558,8 +797,127 @@ function SongRow(props: {
             >
               Exclude
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`Are you sure you want to permanently delete "${song.title}" from the database?`)) {
+                  onDelete();
+                }
+              }}
+              disabled={busy}
+              className="rounded bg-rose-700 hover:bg-rose-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              Delete
+            </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PlexTrackRow(props: {
+  track: {
+    ratingKey: string;
+    key: string;
+    title: string;
+    artist: string | null;
+    album: string | null;
+    year: number | null;
+    durationS: number | null;
+    thumb: string | null;
+    isImported: boolean;
+    songId: string | null;
+    status: SongStatus | null;
+  };
+  previewing: boolean;
+  busy: boolean;
+  onPreview: () => void;
+  onImport: (status: "approved" | "unreviewed" | "excluded") => void;
+}) {
+  const { track, previewing, busy, onPreview, onImport } = props;
+
+  const durationStr = track.durationS
+    ? `${Math.floor(track.durationS / 60)}:${String(track.durationS % 60).padStart(2, "0")}`
+    : "—";
+
+  return (
+    <div className="grid grid-cols-[3rem_1fr_auto] gap-3 py-4 pl-3 pr-1 border-l-4 border-l-slate-800">
+      <div className="relative h-12 w-12 shrink-0">
+        <button
+          type="button"
+          onClick={onPreview}
+          title="Preview track (defaults to 30s)"
+          className="relative h-full w-full overflow-hidden rounded bg-slate-900 text-lg border border-white/5"
+        >
+          {track.thumb ? (
+            <img src={plexArtUrl(track.thumb)} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-slate-500">♪</span>
+          )}
+          <span className="absolute inset-0 flex items-center justify-center rounded bg-black/40 opacity-0 hover:opacity-100">
+            {previewing ? "⏸" : "▶"}
+          </span>
+        </button>
+      </div>
+
+      <div className="min-w-0 flex flex-col justify-center">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold text-slate-100 truncate">{track.title || "Unknown Track"}</span>
+          {track.isImported && (
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+              track.status === "approved"
+                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20"
+                : track.status === "excluded"
+                  ? "bg-rose-500/15 text-rose-400 border border-rose-500/20"
+                  : "bg-slate-700/30 text-slate-400 border border-slate-700/50"
+            }`}>
+              Imported ({track.status || "unreviewed"})
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 text-sm text-slate-400 truncate mt-0.5">
+          <span className="truncate">{track.artist || "Unknown Artist"}</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-slate-500 truncate">{track.album || "Unknown Album"}</span>
+          {track.year && (
+            <>
+              <span className="text-slate-650">·</span>
+              <span className="rounded bg-slate-900/50 px-1 py-0.2 text-xs text-slate-500 border border-white/5">{track.year}</span>
+            </>
+          )}
+          {track.durationS && (
+            <>
+              <span className="text-slate-650">·</span>
+              <span className="text-slate-500 text-xs">{durationStr}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {track.isImported ? (
+          <span className="text-xs text-slate-500 italic pr-2 font-medium">Ready in game</span>
+        ) : (
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onImport("approved")}
+              className="rounded-xl bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+            >
+              Import & Approve
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onImport("unreviewed")}
+              className="rounded-xl border border-slate-700 bg-slate-900 hover:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-350 transition disabled:opacity-50"
+            >
+              Import (Review later)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

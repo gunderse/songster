@@ -1,5 +1,10 @@
 # Songster 🎵
 
+```
+conda activate ./.conda-env
+./start-songster.sh
+```
+
 Songster is a LAN-only, theater-style web party game — a digital reimagining of *Hitster* with **no cards and no QR-on-cards**. 
 
 Teams hear a song snippet on a shared **hub** screen (e.g. your TV or computer monitor) and place it chronologically on their team's timeline. The first team to build a correct timeline of 7 (or 10) songs wins the game. 
@@ -80,3 +85,8 @@ Songster runs entirely offline on your LAN:
 - **GPU Lock**: Emcee script and audio generation are serialized under a single lock so host actions never overlap on a single GPU.
 
 If AI services are down, the game automatically degrades gracefully to text-only captions and retro synthesizer sound effects.
+
+## Ideas
+- Waiting for the reveal we need to see something more exciting on the hub screen instead of just a floating question mark.
+- End of game recap showing songs?
+- slot selection on the phone UI the button slot show stretch to fill the horizontal space available.  

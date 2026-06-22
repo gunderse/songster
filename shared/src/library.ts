@@ -22,6 +22,7 @@ export interface LibrarySong {
   hasArt: boolean;
   status: SongStatus;
   suspiciousFlags: string[];
+  source: "local" | "plex";
 }
 
 export interface FacetCount {
@@ -51,6 +52,7 @@ export const songListQuerySchema = z.object({
   genre: z.string().trim().max(40).optional(),
   tag: z.string().trim().max(40).optional(),
   sort: z.enum(["title", "artist", "year", "flagged"]).default("flagged"),
+  source: z.enum(["all", "local", "plex"]).default("all"),
 });
 export type SongListQuery = z.infer<typeof songListQuerySchema>;
 

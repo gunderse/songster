@@ -5,6 +5,7 @@ import type {
   SongListQuery,
   SongUpdate,
   YearSuggestion,
+  SongStatus,
 } from "@songster/shared/library";
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
@@ -36,6 +37,7 @@ export function fetchSongs(query: Partial<SongListQuery>): Promise<LibrarySong[]
   if (query.genre) params.set("genre", query.genre);
   if (query.tag) params.set("tag", query.tag);
   if (query.sort) params.set("sort", query.sort);
+  if (query.source) params.set("source", query.source);
   return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`).then((r) => r.songs);
 }
 
@@ -139,4 +141,47 @@ export function requestPlexPin(): Promise<{ pinId: number; code: string }> {
 
 export function checkPlexAuth(pinId: number): Promise<{ ok: boolean; connected: boolean }> {
   return http<{ ok: boolean; connected: boolean }>(`/api/library/settings/plex/auth/check/${pinId}`);
+}
+
+export interface PlexSearchResult {
+  totalSize: number;
+  results: Array<{
+    ratingKey: string;
+    key: string;
+    title: string;
+    artist: string | null;
+    album: string | null;
+    year: number | null;
+    durationS: number | null;
+    thumb: string | null;
+    isImported: boolean;
+    songId: string | null;
+    status: SongStatus | null;
+  }>;
+}
+
+export function searchPlex(search: string, sort: string, start: number, size: number): Promise<PlexSearchResult> {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (sort) params.set("sort", sort);
+  params.set("start", String(start));
+  params.set("size", String(size));
+  return http<PlexSearchResult>(`/api/library/plex/search?${params.toString()}`);
+}
+
+export function importPlex(ratingKey: string, status: "approved" | "unreviewed" | "excluded"): Promise<{ success: boolean; songId: string; title: string; artist: string | null }> {
+  return http<{ success: boolean; songId: string; title: string; artist: string | null }>("/api/library/plex/import", {
+    method: "POST",
+    body: JSON.stringify({ ratingKey, status }),
+  });
+}
+
+export function deleteSong(id: string): Promise<{ success: boolean; id: string }> {
+  return http<{ success: boolean; id: string }>(`/api/library/songs/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function plexArtUrl(thumb: string): string {
+  return `/api/library/plex/art?thumb=${encodeURIComponent(thumb)}`;
 }

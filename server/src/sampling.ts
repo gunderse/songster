@@ -25,7 +25,7 @@ interface SongSampleRow {
 }
 
 function defaultStart(duration: number | null): number {
-  if (duration === null || duration <= 0) return 0;
+  if (duration === null || duration <= 0) return 30;
   return Math.round(Math.min(30, duration * 0.25));
 }
 

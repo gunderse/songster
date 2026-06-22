@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile, unlink, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type DatabaseType from "better-sqlite3";
@@ -43,13 +43,13 @@ interface SongUpsertRow {
   now: number;
 }
 
-function opaqueId(relativePath: string): string {
+export function opaqueId(relativePath: string): string {
   return createHash("sha256").update(relativePath).digest("hex").slice(0, 16);
 }
 
 /** Default snippet anchor: a quarter of the way in, capped at 30s. The curator can scrub. */
-function defaultSnippetStart(durationS: number | null): number | null {
-  if (durationS === null || durationS <= 0) return null;
+export function defaultSnippetStart(durationS: number | null): number {
+  if (durationS === null || durationS <= 0) return 30;
   return Math.round(Math.min(30, durationS * 0.25));
 }
 
@@ -60,16 +60,22 @@ function genreFromRelativePath(relativePath: string, fallback: string | null): s
 }
 
 /** Last-resort display title for untagged files, derived from the file name. */
-function titleFromFileName(relativePath: string): string {
+export function titleFromFileName(relativePath: string): string {
   const base = path.basename(relativePath, path.extname(relativePath)).replace(/_/g, " ").trim();
   return base.length > 0 ? base : relativePath;
 }
 
-function extensionForImage(format: string): string {
+export function extensionForImage(format: string): string {
   if (format.includes("png")) return "png";
   if (format.includes("webp")) return "webp";
   if (format.includes("gif")) return "gif";
   return "jpg";
+}
+
+export function isValidImageSignature(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  const hex = buffer.slice(0, 4).toString("hex");
+  return hex.startsWith("ffd8") || hex === "89504e47" || hex === "47494638" || hex === "52494646";
 }
 
 async function readDirSafe(root: string) {
@@ -93,8 +99,7 @@ async function* walkAudioFiles(root: string): AsyncGenerator<string> {
   }
 }
 
-
-function parsePlexFilePath(filePath: string): { title: string; artist: string | null; album: string | null; year: number | null } {
+export function parsePlexFilePath(filePath: string): { title: string; artist: string | null; album: string | null; year: number | null } {
   if (!filePath) {
     return { title: "Unknown Track", artist: null, album: null, year: null };
   }
@@ -240,11 +245,16 @@ async function scanPlexLibrary(
           const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${plexToken}`);
           if (artResponse.ok) {
             const buffer = await artResponse.arrayBuffer();
-            const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
-            const fileName = `${id}.${ext}`;
-            await writeFile(path.join(artDir, fileName), Buffer.from(buffer));
-            artPath = path.posix.join("art", fileName);
-            summary.withArt += 1;
+            const nodeBuffer = Buffer.from(buffer);
+            if (isValidImageSignature(nodeBuffer)) {
+              const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
+              const fileName = `${id}.${ext}`;
+              await writeFile(path.join(artDir, fileName), nodeBuffer);
+              artPath = path.posix.join("art", fileName);
+              summary.withArt += 1;
+            } else {
+              logger.warn({ track: track.title, thumb }, "Plex art returned invalid image signature; discarded");
+            }
           }
         } catch (err) {
           logger.warn({ track: track.title, error: (err as Error).message }, "failed to download Plex art");
@@ -425,28 +435,10 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     }
   }
 
-  // 2. Scan Plex library if configured
-  if (plexUrl.length > 0 && plexToken.length > 0) {
-    try {
-      await scanPlexLibrary(
-        db,
-        plexUrl,
-        plexToken,
-        plexLibraryName,
-        plexScanLimit,
-        summary,
-        upsert,
-        ensureGenre,
-        existing
-      );
-    } catch (error) {
-      logger.error({ error: (error as Error).message }, "Plex scan failed");
-      summary.errors += 1;
-      summary.plexError = (error as Error).message;
-    }
-  }
+
 
   flagArtistYearOutliers(db);
+  await healCorruptedArt(db);
 
   return summary;
 }
@@ -485,5 +477,37 @@ function flagArtistYearOutliers(db: DatabaseType.Database): void {
         update.run(JSON.stringify([...flags]), now, song.id);
       }
     }
+  }
+}
+
+export async function healCorruptedArt(db: DatabaseType.Database): Promise<void> {
+  const songs = db.prepare("SELECT id, art_path FROM songs WHERE art_path IS NOT NULL").all() as Array<{ id: string; art_path: string }>;
+  const dataDir = path.resolve(import.meta.dirname, "../../data");
+  
+  const update = db.prepare("UPDATE songs SET art_path = NULL, updated_at = ? WHERE id = ?");
+  const now = Date.now();
+  
+  let cleanedCount = 0;
+  for (const song of songs) {
+    const fullPath = path.join(dataDir, song.art_path);
+    let isValid = false;
+    try {
+      const buffer = await readFile(fullPath);
+      if (isValidImageSignature(buffer)) {
+        isValid = true;
+      } else {
+        await unlink(fullPath).catch(() => {});
+      }
+    } catch (err) {
+      // File missing or unreadable is also invalid
+    }
+    
+    if (!isValid) {
+      update.run(now, song.id);
+      cleanedCount++;
+    }
+  }
+  if (cleanedCount > 0) {
+    logger.info({ cleanedCount }, "Cleaned up corrupted cover art files");
   }
 }
