@@ -59,6 +59,13 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
         <p className="text-lg font-bold" style={{ color: winningTeam?.color }}>
           {winningTeam?.name} took the crown
         </p>
+        <button
+          type="button"
+          onClick={() => socket.emit("room:start", { code: room.code })}
+          className="mt-6 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-8 py-4 text-base font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-emerald-950/20"
+        >
+          🎮 Play another game
+        </button>
       </Centered>
     );
   }
@@ -368,7 +375,7 @@ function TimelinePicker(props: {
         type="button"
         whileTap={{ scale: 0.98 }}
         onClick={() => onSelect(i)}
-        className={`relative flex items-center justify-center gap-2 rounded-2xl border-2 py-4 text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
+        className={`w-full relative flex items-center justify-center gap-2 rounded-2xl border-2 py-4 text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
           isSel ? `${selClass} border-solid` : "border-dashed border-slate-800 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200"
         }`}
       >

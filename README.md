@@ -90,3 +90,5 @@ If AI services are down, the game automatically degrades gracefully to text-only
 - Waiting for the reveal we need to see something more exciting on the hub screen instead of just a floating question mark.
 - End of game recap showing songs?
 - slot selection on the phone UI the button slot show stretch to fill the horizontal space available.  
+- at the end of game need a button to play another game
+- better plex import - working images confirmed year, auto tagging?

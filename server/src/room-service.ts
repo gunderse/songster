@@ -334,7 +334,7 @@ export class RoomManager {
 
   startGame(code: string): Room | undefined {
     const room = this.getRoom(code);
-    if (room === undefined || room.status !== "lobby") return room;
+    if (room === undefined || (room.status !== "lobby" && room.status !== "finished")) return room;
 
     const minSongs = room.teams.length + 1;
     const available = countAvailable(this.db, room.config.deck, room.config.musicSource, []);

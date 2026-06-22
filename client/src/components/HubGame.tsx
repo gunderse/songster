@@ -4,6 +4,7 @@ import type { TimelineCardView } from "@songster/shared/game";
 import type { RoomState } from "@songster/shared/room";
 
 import { artUrl } from "../api";
+import { socket } from "../socket";
 
 /** Splice in a "placeholder" sentinel at the guessed slot during the suspense. */
 function timelineWithPlaceholder(
@@ -56,6 +57,13 @@ export function HubGame({
             🎙 The host is writing the grand finale…
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => socket.emit("room:start", { code: room.code })}
+          className="mt-6 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-10 py-4.5 text-xl font-black text-white hover:scale-[1.03] active:scale-[0.98] transition shadow-lg shadow-emerald-950/20 animate-bounce"
+        >
+          🎮 Play another game
+        </button>
       </div>
     );
   }
@@ -178,13 +186,59 @@ export function HubGame({
           ) : (
             <motion.div
               key="mystery"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: [0.7, 1, 0.7] }}
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="flex h-44 w-44 items-center justify-center rounded-full border-4 border-dashed border-slate-700 bg-slate-900/60 backdrop-blur-sm text-7xl shadow-inner"
+              className="relative w-64 h-64 flex items-center justify-center"
             >
-              ❔
+              {/* Outer glowing ambient background */}
+              <div 
+                className="absolute inset-2 rounded-full animate-pulse blur-xl"
+                style={{
+                  background: `radial-gradient(circle, ${activeTeam?.color ?? '#6366f1'}44 0%, transparent 70%)`
+                }}
+              />
+              
+              {/* Spinning Vinyl Record */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                className="relative w-56 h-56 rounded-full bg-black flex items-center justify-center shadow-[0_20px_50px_rgba(0,0,0,0.8)] border border-neutral-800"
+                style={{
+                  backgroundImage: 'repeating-radial-gradient(circle, #0c0a09, #0c0a09 2px, #1c1917 3px, #0c0a09 4px)'
+                }}
+              >
+                {/* Center Record Label (colored by team) */}
+                <div 
+                  className="w-20 h-20 rounded-full flex items-center justify-center shadow-inner relative"
+                  style={{ 
+                    backgroundColor: activeTeam?.color ?? "#6366f1",
+                    boxShadow: "inset 0 0 12px rgba(0,0,0,0.5)"
+                  }}
+                >
+                  {/* Music note center */}
+                  <span className="text-3xl drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)] select-none">🎵</span>
+                </div>
+
+                {/* Spindle hole */}
+                <div className="absolute w-4 h-4 rounded-full bg-slate-950 shadow-inner" />
+              </motion.div>
+
+              {/* Static Specular Shiny Highlights (reflection doesn't rotate) */}
+              <div 
+                className="absolute w-56 h-56 rounded-full pointer-events-none mix-blend-screen opacity-50"
+                style={{
+                  background: 'conic-gradient(from 0deg, transparent 15%, rgba(255,255,255,0.12) 25%, transparent 35%, transparent 65%, rgba(255,255,255,0.12) 75%, transparent 85%)'
+                }}
+              />
+
+              {/* Pulsing Outer Ring */}
+              <motion.div
+                animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.6, 0.3] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute w-60 h-60 rounded-full border-2 border-dashed pointer-events-none"
+                style={{ borderColor: activeTeam?.color ?? "#6366f1" }}
+              />
             </motion.div>
           )}
         </AnimatePresence>
