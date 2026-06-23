@@ -193,7 +193,7 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 500) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
+    return line.length >= 3 ? line.slice(0, 2000) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
   }
 
   async generateText(hostName: string, context: EmceeContext): Promise<string> {

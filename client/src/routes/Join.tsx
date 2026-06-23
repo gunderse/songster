@@ -113,7 +113,16 @@ export function Join({ initialCode }: { initialCode: string | null }) {
           />
         </label>
 
-        {error !== null && <p className="text-rose-400">{error}</p>}
+        {error !== null && (
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-rose-400 text-center">{error}</p>
+            {error === "This room has been destroyed by the host." && (
+              <a href="/admin" className="mt-2 rounded-xl bg-slate-900 border border-white/10 px-4 py-2 text-xs font-semibold hover:bg-slate-800 transition">
+                Go to Admin Screen
+              </a>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={join}

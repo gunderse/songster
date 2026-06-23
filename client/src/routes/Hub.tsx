@@ -155,7 +155,10 @@ export function Hub({ code }: { code: string }) {
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-950 text-slate-100">
         <h1 className="text-3xl font-black">Room {code}</h1>
         <p className="text-rose-400">{error}</p>
-        <p className="text-slate-500">Create it from the Admin screen first.</p>
+        <p className="text-slate-500">Create it from the <a href="/admin">Admin screen</a> first.</p>
+        <a href="/admin" className="mt-4 rounded-xl bg-slate-900 border border-white/10 px-5 py-2.5 text-sm font-semibold hover:bg-slate-800 transition">
+          Go to Admin Screen
+        </a>
       </main>
     );
   }
@@ -249,8 +252,8 @@ function LobbyView({
       <div className="grid items-center gap-8 md:grid-cols-[1.3fr_1fr] bg-slate-900/40 border border-white/5 rounded-3xl p-8 backdrop-blur-md">
         <div>
           <div className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Join the show</div>
-          <div 
-            className="mt-1 leading-none tracking-[0.1em] text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 font-black font-heading" 
+          <div
+            className="mt-1 leading-none tracking-[0.1em] text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 font-black font-heading"
             style={{ fontSize: "min(16vw, 9.5rem)", textShadow: "0 0 40px rgba(99,102,241,0.1)" }}
           >
             {code}

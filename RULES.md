@@ -16,17 +16,23 @@ Songster is a digital music trivia and timeline party game where teams compete t
 ## ⏱️ Turn Play and Placement
 
 1.  A song snippet plays on the shared **Hub** screen.
-2.  The active Placer drags or selects a slot in their team's timeline where they believe the song fits chronologically.
+2.  While the active Placer is deciding:
+    *   **Replay Snippet:** Any player can request to replay the original snippet on the Hub screen (available once the current snippet finishes playing).
+    *   **Continue Snippet:** Any player can request to play the *next slice* (continuation) of the same song (available once the current snippet finishes playing), allowing teams to hear more of the song to help identify it.
+    *   **Skip Song:** The active Placer can spend one of their action tokens to skip the current song entirely. A brand new song is then drawn for them.
+3.  The active Placer drags or selects a slot in their team's timeline where they believe the song fits chronologically.
     *   *Timeline slots* are relative to cards already correctly placed (e.g., before the oldest, between two cards, or after the newest).
     *   Ties in release years are resolved in favor of the player: placing a card on either side of an identical year is counted as correct.
-3.  The Placer locks in their placement guess.
+4.  The Placer locks in their placement guess.
 
 ---
 
-## 🕵️ Steals
+## 🕵️ Skips & Steals
 
-*   **Steal Tokens:** Every player starts the game with a set number of Steal tokens (configured in the room settings).
-*   **Placing a Steal:** While the active Placer is deciding, players on *opposing teams* can spend a Steal token to challenge.
+*   **Action Tokens:** Every player starts the game with a set number of tokens (configured in the room settings). These tokens can be spent to perform special actions:
+    *   **Skip:** Spends 1 token (active Placer only) to discard the current song and draw a new one.
+    *   **Steal:** Spends 1 token (opposing teams only) to challenge.
+*   **Placing a Steal:** While the active Placer is deciding, players on *opposing teams* can spend a token to challenge.
     *   Only **one steal** can be placed per turn (first-come, first-served).
     *   The stealer chooses a slot in their own team's timeline where they believe the song fits chronologically.
 *   **Resolution:**

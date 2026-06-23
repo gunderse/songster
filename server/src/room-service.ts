@@ -92,6 +92,8 @@ interface ActiveTurn {
   snippetEndsAt: number;
   emceeClip: EmceeClip | null;
   emceePromise: Promise<void> | null;
+  preGeneratedCorrectPromise: Promise<string> | null;
+  preGeneratedWrongPromise: Promise<string> | null;
   /** Auto-resolve timer for the placer's clock; null if disabled. */
   placeDeadline: number | null;
   placeTimer: ReturnType<typeof setTimeout> | null;
@@ -601,6 +603,8 @@ export class RoomManager {
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
       emceeClip: null,
       emceePromise: null,
+      preGeneratedCorrectPromise: null,
+      preGeneratedWrongPromise: null,
       playedThroughS: song.snippetStartS + lenS,
       suggestions: new Map(),
       commentaryPending: false,
@@ -616,6 +620,44 @@ export class RoomManager {
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
     this.warmHost(room);
+
+    // Pre-generate win and lose commentary scripts (Ollama calls) in the background while the player is choosing
+    void (async () => {
+      try {
+        if (game.hostName === undefined || game.hostName === null) {
+          game.hostPromise ??= emceeService.chooseHost();
+          game.hostName = await game.hostPromise;
+          game.hostPromise = undefined;
+        }
+        if (game.hostName === null) return;
+        const hostName = game.hostName;
+
+        const nextPlayer = this.determineNextPlacer(room, game);
+        const nextPlayerName = nextPlayer ? nextPlayer.name : null;
+
+        // Calculate potential lead changes for the correct outcome
+        const teamForCorrect = game.teams.find((t) => t.teamId === game.active!.teamId);
+        let correctLeadChanged = false;
+        if (teamForCorrect) {
+          const originalTimeline = teamForCorrect.timeline;
+          teamForCorrect.timeline = [...originalTimeline, sampledToCard(song, false)];
+          const newLeaderCorrect = this.uniqueLeader(game);
+          correctLeadChanged = newLeaderCorrect !== null && game.leaderTeamId !== null && newLeaderCorrect !== game.leaderTeamId;
+          teamForCorrect.timeline = originalTimeline;
+        }
+
+        const correctContext = this.buildEmceeContext(room, game, true, correctLeadChanged, nextPlayerName);
+        const wrongContext = this.buildEmceeContext(room, game, false, false, nextPlayerName);
+
+        if (game.active && game.active.song.songId === song.songId) {
+          game.active.preGeneratedCorrectPromise = emceeService.generateText(hostName, correctContext);
+          game.active.preGeneratedWrongPromise = emceeService.generateText(hostName, wrongContext);
+        }
+      } catch (err) {
+        logger.error({ error: getErrorMessage(err) }, "failed to pre-generate emcee scripts");
+      }
+    })();
+
     return room;
   }
 
@@ -885,8 +927,20 @@ export class RoomManager {
       game.hostPromise = undefined;
     }
     if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
+
+    let preGeneratedText: string | null = null;
+    try {
+      if (correct && game.active.preGeneratedCorrectPromise) {
+        preGeneratedText = await game.active.preGeneratedCorrectPromise;
+      } else if (!correct && game.active.preGeneratedWrongPromise) {
+        preGeneratedText = await game.active.preGeneratedWrongPromise;
+      }
+    } catch (err) {
+      logger.warn({ error: getErrorMessage(err) }, "error retrieving pre-generated emcee script");
+    }
+
     const context = this.buildEmceeContext(room, game, correct, leadChanged, nextPlayerName);
-    const clip = await emceeService.revealClip(game.hostName, context);
+    const clip = await emceeService.revealClip(game.hostName, context, preGeneratedText);
     if (game.active !== null && game.turnCounter === turnId) {
       game.active.emceeClip = clip;
     }
@@ -1157,6 +1211,8 @@ export class RoomManager {
       snippetEndsAt: Date.now() + lenS * 1000 + 1000,
       emceeClip: null,
       emceePromise: null,
+      preGeneratedCorrectPromise: null,
+      preGeneratedWrongPromise: null,
       playedThroughS: song.snippetStartS + lenS,
       suggestions: new Map(),
       commentaryPending: false,
@@ -1172,6 +1228,43 @@ export class RoomManager {
     this.hooks.broadcast(room.code);
     this.hooks.playAudioToHubs(room.code, { songId: song.songId, startS: song.snippetStartS, lenS });
     this.warmHost(room);
+
+    // Pre-generate win and lose commentary scripts (Ollama calls) in the background while the player is choosing
+    void (async () => {
+      try {
+        if (game.hostName === undefined || game.hostName === null) {
+          game.hostPromise ??= emceeService.chooseHost();
+          game.hostName = await game.hostPromise;
+          game.hostPromise = undefined;
+        }
+        if (game.hostName === null) return;
+        const hostName = game.hostName;
+
+        const nextPlayer = this.determineNextPlacer(room, game);
+        const nextPlayerName = nextPlayer ? nextPlayer.name : null;
+
+        // Calculate potential lead changes for the correct outcome
+        const teamForCorrect = game.teams.find((t) => t.teamId === game.active!.teamId);
+        let correctLeadChanged = false;
+        if (teamForCorrect) {
+          const originalTimeline = teamForCorrect.timeline;
+          teamForCorrect.timeline = [...originalTimeline, sampledToCard(song, false)];
+          const newLeaderCorrect = this.uniqueLeader(game);
+          correctLeadChanged = newLeaderCorrect !== null && game.leaderTeamId !== null && newLeaderCorrect !== game.leaderTeamId;
+          teamForCorrect.timeline = originalTimeline;
+        }
+
+        const correctContext = this.buildEmceeContext(room, game, true, correctLeadChanged, nextPlayerName);
+        const wrongContext = this.buildEmceeContext(room, game, false, false, nextPlayerName);
+
+        if (game.active && game.active.song.songId === song.songId) {
+          game.active.preGeneratedCorrectPromise = emceeService.generateText(hostName, correctContext);
+          game.active.preGeneratedWrongPromise = emceeService.generateText(hostName, wrongContext);
+        }
+      } catch (err) {
+        logger.error({ error: getErrorMessage(err) }, "failed to pre-generate emcee scripts");
+      }
+    })();
 
     if (placer.isBot) {
       const turnId = game.turnCounter;
