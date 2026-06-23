@@ -130,7 +130,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     const suggestions = active.suggestions ?? [];
     const deadlineMs = active.placeDeadline !== null ? Math.max(0, active.placeDeadline - now) : null;
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
         {/* Glow ambient shapes */}
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
         
@@ -198,7 +198,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── suggest mode: send a non-binding hint to your placer ──────────────
   if (suggestMode && active !== null) {
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
         <div className="text-center relative z-10">
           <div className="text-xs uppercase tracking-widest font-bold text-indigo-300">💡 Teammate suggestion</div>
@@ -232,7 +232,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── steal mode: place your challenge on your own timeline ─────────────
   if (stealMode && active !== null) {
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 overflow-x-hidden">
+      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 overflow-x-hidden">
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-amber-500/5 blur-[80px]" />
         <div className="text-center relative z-10">
           <div className="text-xs uppercase tracking-widest font-bold text-amber-400">🥷 Steal play</div>
@@ -274,7 +274,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── waiting (someone else is placing) ─────────────────────────────────
   return (
-    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
       <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-slate-800/10 blur-[80px]" />
       
       <div className="text-center relative z-10">
@@ -407,8 +407,8 @@ function TimelinePicker(props: {
   }
 
   return (
-    <div className="rounded-3xl bg-slate-900/30 border border-white/5 p-4 backdrop-blur-sm shadow-inner flex flex-col flex-1 max-h-[50vh]">
-      <div className="mb-3 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 px-1">
+    <div className="rounded-3xl bg-slate-900/30 border border-white/5 p-2.5 py-4 sm:p-4 backdrop-blur-sm shadow-inner flex flex-col flex-1 max-h-[50vh]">
+      <div className="mb-3 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-500 px-2 sm:px-1">
         <span>↑ Older</span>
         <span className="text-indigo-400 font-bold bg-indigo-950/30 rounded px-2 py-0.5 border border-indigo-900/20">Select gap</span>
         <span>Newer ↓</span>

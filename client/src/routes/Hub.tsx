@@ -101,10 +101,14 @@ export function Hub({ code }: { code: string }) {
       });
     }
 
+    function onDestroyed() {
+      setError("This room has been destroyed by the host.");
+    }
     socket.on("connect", register);
     socket.on("audio:play", onAudio);
     socket.on("emcee:play", onEmcee);
     socket.on("showcase:play", onShowcase);
+    socket.on("room:destroyed", onDestroyed);
     if (!socket.connected) socket.connect();
     else register();
 
@@ -113,6 +117,7 @@ export function Hub({ code }: { code: string }) {
       socket.off("audio:play", onAudio);
       socket.off("emcee:play", onEmcee);
       socket.off("showcase:play", onShowcase);
+      socket.off("room:destroyed", onDestroyed);
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       if (audioOffTimerRef.current !== undefined) window.clearTimeout(audioOffTimerRef.current);
       stopSnippet();
@@ -157,6 +162,7 @@ export function Hub({ code }: { code: string }) {
 
   const inLobby = room === null || room.status === "lobby";
   const countdownEndsAt = room?.game?.countdownEndsAt ?? null;
+  const countdownReady = room?.game?.countdownReady ?? false;
   const commentaryPending = room?.game?.commentaryPending ?? false;
   const playerCount = room?.players.filter((p) => p.connected || p.isBot).length ?? 0;
   const minSongsNeeded = room ? room.teams.length + 1 : 0;
@@ -191,7 +197,7 @@ export function Hub({ code }: { code: string }) {
       {showcase !== null && <ShowcaseOverlay view={showcase} cueIndex={showcaseCue} />}
 
       {/* Pre-game countdown overlay */}
-      {countdownEndsAt !== null && <Countdown endsAt={countdownEndsAt} />}
+      {countdownEndsAt !== null && <Countdown endsAt={countdownEndsAt} ready={countdownReady} emcee={emcee} />}
 
       <div className="relative z-10 mx-auto max-w-6xl">
         {inLobby ? (
@@ -295,7 +301,7 @@ function LobbyView({
   );
 }
 
-function Countdown({ endsAt }: { endsAt: number }) {
+function Countdown({ endsAt, ready, emcee }: { endsAt: number; ready: boolean; emcee: { hostName: string; text: string } | null }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 200);
@@ -303,20 +309,52 @@ function Countdown({ endsAt }: { endsAt: number }) {
   }, []);
   const remaining = Math.max(0, Math.ceil((endsAt - now) / 1000));
   if (remaining <= 0) return null;
+
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md">
+    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md px-6">
       <div className="text-sm font-bold uppercase tracking-[0.45em] text-amber-400">Get ready</div>
-      <motion.div
-        key={remaining}
-        initial={{ scale: 0.6, opacity: 0, rotate: -10 }}
-        animate={{ scale: 1, opacity: 1, rotate: 0 }}
-        exit={{ scale: 1.4, opacity: 0, rotate: 10 }}
-        transition={{ type: "spring", stiffness: 180, damping: 11 }}
-        className="mt-2 text-[14rem] font-black leading-none tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-amber-300 to-amber-500 drop-shadow-[0_0_50px_rgba(245,158,11,0.5)] font-heading"
-      >
-        {remaining}
-      </motion.div>
-      <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">The show starts in {remaining}…</div>
+
+      {!ready ? (
+        <>
+          <div className="relative w-48 h-48 my-8 flex items-center justify-center">
+            <div className="absolute w-32 h-32 rounded-full border-4 border-slate-900" />
+            <motion.div
+              className="absolute w-32 h-32 rounded-full border-4 border-transparent border-t-amber-400 border-r-amber-500"
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+            />
+            <div className="absolute text-xs font-bold uppercase tracking-widest text-amber-400/70 animate-pulse">
+              Loading
+            </div>
+          </div>
+          <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">Preparing the show…</div>
+        </>
+      ) : (
+        <>
+          <motion.div
+            key={remaining}
+            initial={{ scale: 0.6, opacity: 0, rotate: -10 }}
+            animate={{ scale: 1, opacity: 1, rotate: 0 }}
+            exit={{ scale: 1.4, opacity: 0, rotate: 10 }}
+            transition={{ type: "spring", stiffness: 180, damping: 11 }}
+            className="mt-2 text-[14rem] font-black leading-none tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-amber-300 to-amber-500 drop-shadow-[0_0_50px_rgba(245,158,11,0.5)] font-heading"
+          >
+            {remaining}
+          </motion.div>
+          <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">The show starts in {remaining}…</div>
+        </>
+      )}
+
+      {emcee !== null && emcee.text.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-8 mx-auto max-w-xl text-center bg-slate-900/60 border border-white/5 rounded-2xl p-5 backdrop-blur-md shadow-lg"
+        >
+          <div className="text-xs font-bold uppercase tracking-[0.3em] text-amber-400">🎙 {emcee.hostName}</div>
+          <p className="mt-2 text-base font-medium italic text-slate-200 leading-relaxed">“{emcee.text}”</p>
+        </motion.div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { logger } from "../logger.js";
 import { ollamaService } from "./ollama-service.js";
 import { voiceGeneratorService, type VoiceCharacter } from "./voice-generator-service.js";
 
-export type ShowcaseReason = "steal" | "leadChange" | "milestone" | "finale";
+export type ShowcaseReason = "steal" | "leadChange" | "milestone" | "finale" | "streak";
 
 export interface ShowcaseContext {
   reason: ShowcaseReason;
@@ -18,6 +18,17 @@ export interface ShowcaseContext {
   headline: string;
   /** Whether the placement was right — the cast opens by reacting to it. */
   outcome: "correct" | "wrong";
+  gameHistory?: Array<{
+    turnId: number;
+    teamName: string;
+    placerName: string;
+    song: { title: string | null; artist: string | null; year: number };
+    correct: boolean;
+    steal: { stealerName: string; correct: boolean } | null;
+    scoreAfter: number;
+  }>;
+  playerMentions?: string[];
+  nextPlayerName?: string | null;
 }
 
 interface ThemeConfig {
@@ -107,14 +118,14 @@ const THEMES: ThemeConfig[] = [
 ];
 
 const cueSchema = z.object({ speaker: z.enum(["host", "cohost"]), text: z.string().trim().min(1).max(220) });
-const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(4) });
+const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(8) });
 type Cue = z.infer<typeof cueSchema>;
 
-const OLLAMA_TIMEOUT_MS = 40_000;
+const OLLAMA_TIMEOUT_MS = 120_000;
 
 export class ShowcaseService {
   /** Build a full themed showcase, or null if the AI services are unavailable. */
-  async build(context: ShowcaseContext): Promise<ShowcaseView | null> {
+  async build(context: ShowcaseContext, options?: { model?: string; think?: boolean }): Promise<ShowcaseView | null> {
     let characters: VoiceCharacter[];
     try {
       characters = await voiceGeneratorService.listCharacters();
@@ -131,10 +142,11 @@ export class ShowcaseService {
     let cues: Cue[];
     try {
       const raw = await ollamaService.generate({
-        model: ollamaModel,
+        model: options?.model ?? ollamaModel,
         prompt: buildPrompt(theme, context, cast),
         format: "json",
         timeoutMs: OLLAMA_TIMEOUT_MS,
+        think: options?.think ?? true,
       });
       cues = parseScript(raw);
     } catch (error) {
@@ -186,12 +198,55 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
 
 function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host: string | null; cohost: string | null }): string {
   const song = context.song;
+
+  if (context.reason === "finale") {
+    const historyLines = context.gameHistory
+      ? context.gameHistory
+          .map(
+            (h) =>
+              `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${
+                h.song.title ?? "Unknown Track"
+              }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${
+                h.steal
+                  ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
+                  : ""
+              }. Score after: ${h.scoreAfter}`,
+          )
+          .join("\n")
+      : "";
+
+    const playerMentions = context.playerMentions ? `All players in this game: ${context.playerMentions.join(", ")}.` : "";
+
+    return [
+      `Write a grand finale segment in the style of ${theme.promptStyle} celebrating the end of the Songster game!`,
+      `The game has just ended! Headline: ${context.headline}`,
+      song !== null
+        ? `The final winning song: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.`
+        : "",
+      playerMentions,
+      `Here is the recap of how the game went down:\n${historyLines}`,
+      `Your task is to write a longer, dramatic, and highly entertaining review of the key moments in this game.`,
+      `Incorporate specific mentions of players, highlight key turn outcomes (e.g. replays of specific correct answers or epic steals), and make it feel like a grand finale presentation with high energy.`,
+      `Since this is a grand finale, write 4-6 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
+      `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
+      'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
+      `Speakers: "host" (${cast.host ?? theme.roles.host})${
+        theme.roles.cohost !== null
+          ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})`
+          : ' only — use "host" for every cue'
+      }.`,
+    ]
+      .filter((line) => line.length > 0)
+      .join("\n");
+  }
+
   return [
     `Write a short, funny segment in the style of ${theme.promptStyle}.`,
     `React to this moment in a music-timeline party game: ${context.headline}`,
     `The placing team guessed ${context.outcome === "correct" ? "CORRECTLY" : "WRONG"} — open the first cue by reacting to that.`,
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
     context.situation.length > 0 ? `Game state: ${context.situation}` : "",
+    context.nextPlayerName ? `End the segment by handing off to the next player, ${context.nextPlayerName}.` : "",
     'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
     `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})` : ' only — use "host" for every cue'}.`,
     "2-3 cues total. Each cue ONE short sentence under 24 words, fully in character. Mention the year if a song is given. No markdown, no stage directions.",

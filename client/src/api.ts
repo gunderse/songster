@@ -7,6 +7,7 @@ import type {
   YearSuggestion,
   SongStatus,
 } from "@songster/shared/library";
+import type { ShowcaseView } from "@songster/shared/game";
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -247,4 +248,90 @@ export function importWebArt(id: string, artUrl: string): Promise<LibrarySong> {
     method: "POST",
     body: JSON.stringify({ artUrl }),
   }).then((r) => r.song);
+}
+
+// ── Admin / Benchmark ────────────────────────────────────────────────────────
+
+export interface AdminHealthResult {
+  ollama: { ok: boolean; models: string[]; url: string; error?: string };
+  voice: { ok: boolean; characters: number; url: string; error?: string };
+  defaultModel: string;
+}
+
+export interface BenchmarkPhase {
+  ok: boolean;
+  latencyMs?: number;
+  text?: string;
+  fallbackText?: string;
+  audioUrl?: string;
+  durationMs?: number;
+  models?: string[];
+  characters?: number;
+  error?: string;
+  warning?: string;
+}
+
+export interface BenchmarkResults {
+  ok: boolean;
+  model: string;
+  think: boolean;
+  results: {
+    ollamaHealth?: BenchmarkPhase;
+    voiceHealth?: BenchmarkPhase;
+    ollamaWinNarration?: BenchmarkPhase;
+    ollamaLoseNarration?: BenchmarkPhase;
+    voiceGeneration?: BenchmarkPhase;
+    totalE2eMs?: number;
+  };
+  error?: string;
+}
+
+export function fetchAdminHealth(): Promise<AdminHealthResult> {
+  return http<AdminHealthResult>("/api/admin/health");
+}
+
+export function runAdminBenchmark(options: { model: string; think: boolean }): Promise<BenchmarkResults> {
+  return http<BenchmarkResults>("/api/admin/benchmark", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export interface ShowcaseSmoketestResult {
+  ok: boolean;
+  showcase: ShowcaseView | null;
+  error?: string;
+  latencyMs?: number;
+}
+
+export function runShowcaseSmoketest(options: { model: string; think: boolean }): Promise<ShowcaseSmoketestResult> {
+  return http<ShowcaseSmoketestResult>("/api/admin/showcase-smoketest", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export interface ActiveRoom {
+  code: string;
+  status: string;
+  playerCount: number;
+  teamCount: number;
+  createdAt: number;
+}
+
+export function fetchActiveRooms(): Promise<{ rooms: ActiveRoom[] }> {
+  return http<{ rooms: ActiveRoom[] }>("/api/admin/rooms");
+}
+
+export function destroyRoom(code: string): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/admin/rooms/destroy", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function destroyAllRooms(): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/admin/rooms/destroy-all", {
+    method: "POST",
+  });
 }

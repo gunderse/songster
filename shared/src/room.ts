@@ -23,6 +23,9 @@ export const roomConfigSchema = z.object({
   turnTimerS: z.number().int().min(0).max(180).default(45),
   deck: deckFilterSchema.default({}),
   musicSource: z.enum(["local", "plex", "all"]).default("all"),
+  showcaseSteals: z.boolean().default(false),
+  showcaseLeadChanges: z.boolean().default(false),
+  showcaseStreaks: z.boolean().default(false),
 });
 export type RoomConfig = z.infer<typeof roomConfigSchema>;
 

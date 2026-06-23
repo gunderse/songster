@@ -43,6 +43,7 @@ export interface ServerToClientEvents {
   "emcee:play": (payload: { audioUrl: string | null; hostName: string; text: string }) => void;
   /** Hub-only: a full themed showcase segment at a peak moment. */
   "showcase:play": (payload: ShowcaseView) => void;
+  "room:destroyed": () => void;
 }
 
 export interface ClientToServerEvents {

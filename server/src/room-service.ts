@@ -14,6 +14,7 @@ import type { PlayerView, RoomConfig, RoomState, RoomStatus, TeamView } from "@s
 
 import { emceeService, type EmceeClip, type EmceeContext } from "./ai/emcee-service.js";
 import { logger } from "./logger.js";
+import { getErrorMessage } from "./error-details.js";
 import { showcaseService, type ShowcaseReason } from "./ai/showcase-service.js";
 import { showcaseEveryN } from "./config.js";
 import { hasWon, insertCardAt, isCorrectPlacement, nextRotation, scoreOf, type PlacedCard } from "./game.js";
@@ -118,6 +119,16 @@ interface ActiveTurn {
   pendingResult: TurnResultView | null;
 }
 
+interface GameHistoryEntry {
+  turnId: number;
+  teamName: string;
+  placerName: string;
+  song: { title: string | null; artist: string | null; year: number };
+  correct: boolean;
+  steal: { stealerName: string; correct: boolean } | null;
+  scoreAfter: number;
+}
+
 interface Game {
   target: number;
   teams: GameTeam[];
@@ -133,7 +144,9 @@ interface Game {
   hostPromise?: Promise<string | null>;
   /** Set during the pre-game countdown; null once turn 1 begins. */
   countdownEndsAt: number | null;
+  countdownReady: boolean;
   countdownTimer: ReturnType<typeof setTimeout> | null;
+  history: GameHistoryEntry[];
 }
 
 interface Room {
@@ -154,6 +167,7 @@ export interface RoomHooks {
   playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
   emceeToHubs(code: string, payload: { audioUrl: string | null; hostName: string; text: string }): void;
   showcaseToHubs(code: string, payload: ShowcaseView): void;
+  roomDestroyed?: (code: string) => void;
 }
 
 /**
@@ -193,6 +207,40 @@ export class RoomManager {
 
   getRoom(code: string): Room | undefined {
     return this.rooms.get(code.toUpperCase());
+  }
+
+  listRooms(): Room[] {
+    return [...this.rooms.values()];
+  }
+
+  destroyRoom(code: string): boolean {
+    const uppercaseCode = code.toUpperCase();
+    const room = this.getRoom(uppercaseCode);
+    if (room === undefined) return false;
+
+    if (room.game !== null) {
+      if (room.game.countdownTimer !== null) {
+        clearTimeout(room.game.countdownTimer);
+        room.game.countdownTimer = null;
+      }
+      if (room.game.revealTimer !== null) {
+        clearTimeout(room.game.revealTimer);
+        room.game.revealTimer = null;
+      }
+      if (room.game.active !== null) {
+        this.cancelPlaceTimer(room.game.active);
+      }
+    }
+
+    this.hooks.roomDestroyed?.(uppercaseCode);
+    this.rooms.delete(uppercaseCode);
+    return true;
+  }
+
+  destroyAllRooms(): void {
+    for (const code of this.rooms.keys()) {
+      this.destroyRoom(code);
+    }
   }
 
   hubSocketIds(code: string): string[] {
@@ -366,8 +414,10 @@ export class RoomManager {
       winnerTeamId: null,
       revealTimer: null,
       leaderTeamId: null,
-      countdownEndsAt: Date.now() + COUNTDOWN_MS,
+      countdownEndsAt: Date.now() + 60000,
+      countdownReady: false,
       countdownTimer: null,
+      history: [],
     };
     for (const player of room.players.values()) {
       player.tokens = room.config.tokensPerPlayer;
@@ -375,15 +425,114 @@ export class RoomManager {
     room.status = "playing";
     // Warm the host pick during the countdown so turn 1's commentary is fast.
     this.warmHost(room);
+
+    // Start generating the rules explanation & team intro clip
+    void (async () => {
+      try {
+        const hostName = await emceeService.chooseHost();
+        if (hostName === null || room.game === null) {
+          this.fallbackToShortCountdown(room);
+          return;
+        }
+        room.game.hostName = hostName;
+
+        const teamNames = room.teams.map((t) => t.name);
+        const playerNames = [...room.players.values()].map((p) => p.name);
+
+        // Find the first player who will play
+        let firstPlayerName: string | null = null;
+        let tempIndex = 0;
+        let attempts = 0;
+        while (attempts < room.game.teams.length) {
+          const team = room.game.teams[tempIndex % room.game.teams.length]!;
+          const members = [...room.players.values()]
+            .filter((p) => p.teamId === team.teamId && p.connected)
+            .sort((a, b) => a.joinedAt - b.joinedAt);
+          if (members.length > 0) {
+            firstPlayerName = members[0]!.name;
+            break;
+          }
+          tempIndex = nextRotation(tempIndex, room.game.teams.length);
+          attempts += 1;
+        }
+
+        const hasMultipleMembers = room.teams.some((team) => {
+          const membersCount = [...room.players.values()].filter((p) => p.teamId === team.id).length;
+          return membersCount > 1;
+        });
+
+        // Generate the intro clip
+        const clip = await emceeService.generateIntroClip(
+          hostName,
+          teamNames,
+          playerNames,
+          room.game.target,
+          firstPlayerName,
+          { hasMultipleMembers }
+        );
+
+        if (room.game === null || room.game.countdownEndsAt === null || room.status !== "playing") return;
+
+        if (clip !== null) {
+          // Play the intro clip on the hub screens
+          this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+
+          // Adjust the countdown to fit the vocal rules intro duration + 2s buffer
+          const duration = clip.durationMs + 2000;
+          room.game.countdownEndsAt = Date.now() + duration;
+          room.game.countdownReady = true;
+
+          if (room.game.countdownTimer !== null) {
+            clearTimeout(room.game.countdownTimer);
+          }
+
+          room.game.countdownTimer = setTimeout(() => {
+            if (room.game !== null) {
+              room.game.countdownEndsAt = null;
+              room.game.countdownTimer = null;
+            }
+            this.beginTurn(room);
+          }, duration);
+
+          this.hooks.broadcast(room.code);
+        } else {
+          this.fallbackToShortCountdown(room);
+        }
+      } catch (err) {
+        logger.error({ error: getErrorMessage(err) }, "failed generating vocal intro rules");
+        this.fallbackToShortCountdown(room);
+      }
+    })();
+
+    if (room.game !== null) {
+      room.game.countdownTimer = setTimeout(() => {
+        if (room.game !== null) {
+          room.game.countdownEndsAt = null;
+          room.game.countdownTimer = null;
+        }
+        this.beginTurn(room);
+      }, 60000);
+    }
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  private fallbackToShortCountdown(room: Room): void {
+    if (room.game === null || room.game.countdownEndsAt === null) return;
+    const duration = 5000;
+    room.game.countdownEndsAt = Date.now() + duration;
+    room.game.countdownReady = true;
+    if (room.game.countdownTimer !== null) {
+      clearTimeout(room.game.countdownTimer);
+    }
     room.game.countdownTimer = setTimeout(() => {
       if (room.game !== null) {
         room.game.countdownEndsAt = null;
         room.game.countdownTimer = null;
       }
       this.beginTurn(room);
-    }, COUNTDOWN_MS);
+    }, duration);
     this.hooks.broadcast(room.code);
-    return room;
   }
 
   /** A teammate sends a non-binding suggestion to the active placer. */
@@ -605,6 +754,21 @@ export class RoomManager {
     game.active.pendingResult = pendingResult;
     game.active.phase = "suspense";
     game.active.commentaryPending = true;
+
+    const currentTeamName = room.teams.find((t) => t.id === team.teamId)?.name ?? "the team";
+    if (!game.history) {
+      game.history = [];
+    }
+    game.history.push({
+      turnId: game.turnCounter,
+      teamName: currentTeamName,
+      placerName,
+      song: { title: song.title, artist: song.artist, year: song.year },
+      correct,
+      steal: stealResult ? { stealerName: stealResult.playerName, correct: stealResult.correct } : null,
+      scoreAfter: scoreOf(team.timeline),
+    });
+
     this.hooks.broadcast(room.code);
 
     const revealedSong = { title: song.title, artist: song.artist, year: song.year };
@@ -645,11 +809,13 @@ export class RoomManager {
     };
 
     if (reason !== null) {
-      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct, promoteWinner);
+      void this.deliverShowcase(room, game.turnCounter, reason, headline, revealedSong, correct, leadChanged, promoteWinner);
     } else {
       // Generate the host's line now that we know the outcome (so it opens with right/wrong),
       // then deliver it — deliverEmcee owns the reveal timer.
-      game.active.emceePromise = this.generateEmcee(room, game.turnCounter, correct);
+      const nextPlayer = this.determineNextPlacer(room, game);
+      const nextPlayerName = nextPlayer ? nextPlayer.name : null;
+      game.active.emceePromise = this.generateEmcee(room, game.turnCounter, correct, leadChanged, nextPlayerName);
       void this.deliverEmcee(room, game.turnCounter, promoteWinner);
     }
     return room;
@@ -703,7 +869,13 @@ export class RoomManager {
     }
   }
 
-  private async generateEmcee(room: Room, turnId: number, correct: boolean): Promise<void> {
+  private async generateEmcee(
+    room: Room,
+    turnId: number,
+    correct: boolean,
+    leadChanged: boolean,
+    nextPlayerName: string | null
+  ): Promise<void> {
     const game = room.game;
     if (game === null) return;
     // Pick the host once; if the voice API was down (null), retry on later turns.
@@ -713,21 +885,51 @@ export class RoomManager {
       game.hostPromise = undefined;
     }
     if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
-    const context = this.buildEmceeContext(room, game, correct);
+    const context = this.buildEmceeContext(room, game, correct, leadChanged, nextPlayerName);
     const clip = await emceeService.revealClip(game.hostName, context);
     if (game.active !== null && game.turnCounter === turnId) {
       game.active.emceeClip = clip;
     }
   }
 
-  private buildEmceeContext(room: Room, game: Game, correct: boolean): EmceeContext {
+  private buildEmceeContext(
+    room: Room,
+    game: Game,
+    correct: boolean,
+    leadChanged: boolean,
+    nextPlayerName: string | null
+  ): EmceeContext {
     const active = game.active!;
+    const team = game.teams.find((t) => t.teamId === active.teamId);
+
+    let stealInfo = null;
+    if (active.pendingResult?.steal?.correct) {
+      const stealerName = active.pendingResult.steal.playerName;
+      const stealerTeamName = room.teams.find((t) => t.id === active.pendingResult!.steal!.teamId)?.name ?? "opponents";
+      stealInfo = { stealerName, stealerTeamName };
+    }
+
+    let leadChangeInfo = null;
+    if (leadChanged) {
+      const leaderName = room.teams.find((t) => t.id === game.leaderTeamId)?.name ?? "someone";
+      leadChangeInfo = { newLeaderName: leaderName };
+    }
+
+    let streakInfo = null;
+    if (correct && team && team.streak >= 2) {
+      streakInfo = { streakCount: team.streak };
+    }
+
     return {
       song: { title: active.song.title, artist: active.song.artist, year: active.song.year },
       teamName: room.teams.find((t) => t.id === active.teamId)?.name ?? "the team",
       placerName: room.players.get(active.placerId)?.name ?? "someone",
       situation: this.describeSituation(room, game),
       outcome: correct ? "correct" : "wrong",
+      steal: stealInfo,
+      leadChange: leadChangeInfo,
+      streak: streakInfo,
+      nextPlayerName,
     };
   }
 
@@ -788,7 +990,13 @@ export class RoomManager {
       // ALWAYS push the caption + (optional) audio. The Voice API may have failed
       // — text-only is still shown so the host always has something to say.
       this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
+      game.revealTimer = setTimeout(() => {
+        if (room.game !== null && room.game.winnerTeamId !== null) {
+          this.finishGame(room);
+        } else {
+          this.advanceTurn(room);
+        }
+      }, Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
       return;
     }
 
@@ -797,7 +1005,13 @@ export class RoomManager {
     // push it and extend the turn to fit. The voice never gets dropped on the floor.
     logger.info({ code: room.code, turnId }, "emcee: suspense ceiling hit; waiting for late voice");
     const baseTimerStart = Date.now();
-    game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
+    game.revealTimer = setTimeout(() => {
+      if (room.game !== null && room.game.winnerTeamId !== null) {
+        this.finishGame(room);
+      } else {
+        this.advanceTurn(room);
+      }
+    }, Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
 
     const pending = game.active.emceePromise;
     if (pending === null) return;
@@ -815,7 +1029,13 @@ export class RoomManager {
       logger.info({ code: room.code, turnId, delayMs: Date.now() - baseTimerStart }, "emcee: late voice delivered");
       // Extend the timer so the late voice gets to finish.
       if (room.game.revealTimer !== null) clearTimeout(room.game.revealTimer);
-      room.game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800));
+      room.game.revealTimer = setTimeout(() => {
+        if (room.game !== null && room.game.winnerTeamId !== null) {
+          this.finishGame(room);
+        } else {
+          this.advanceTurn(room);
+        }
+      }, Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800));
     })();
   }
 
@@ -831,6 +1051,7 @@ export class RoomManager {
     headline: string,
     song: { title: string | null; artist: string | null; year: number },
     correct: boolean,
+    leadChanged: boolean,
     onReveal?: () => void,
   ): Promise<void> {
     const game = room.game;
@@ -838,12 +1059,21 @@ export class RoomManager {
     if (reason !== "finale" && game.turnCounter !== turnId) return;
 
     const placedAt = Date.now();
+    const playerMentions = reason === "finale" ? [...room.players.values()].map((p) => p.name) : undefined;
+    const gameHistory = reason === "finale" ? game.history : undefined;
+
+    const nextPlayer = this.determineNextPlacer(room, game);
+    const nextPlayerName = nextPlayer ? nextPlayer.name : null;
+
     const view = await showcaseService.build({
       reason,
       song,
       situation: this.describeSituation(room, game),
       headline,
       outcome: correct ? "correct" : "wrong",
+      gameHistory,
+      playerMentions,
+      nextPlayerName,
     });
 
     // Honour the suspense floor — but cap so a slow showcase can't stall forever.
@@ -856,7 +1086,7 @@ export class RoomManager {
       // Fall back to the single emcee line (also outcome-aware) — that path
       // owns its own suspense floor, so it'll still land in sync.
       if (game.active !== null) {
-        game.active.emceePromise = this.generateEmcee(room, turnId, correct);
+        game.active.emceePromise = this.generateEmcee(room, turnId, correct, leadChanged, nextPlayerName);
         void this.deliverEmcee(room, turnId, onReveal);
       }
       return;
@@ -980,6 +1210,23 @@ export class RoomManager {
     return members[team.placerIndex % members.length]!;
   }
 
+  private determineNextPlacer(room: Room, game: Game): Player | null {
+    let tempTurnIndex = nextRotation(game.turnIndex, game.teams.length);
+    let attempts = 0;
+    while (attempts < game.teams.length) {
+      const team = game.teams[tempTurnIndex % game.teams.length]!;
+      const members = [...room.players.values()]
+        .filter((p) => p.teamId === team.teamId && p.connected)
+        .sort((a, b) => a.joinedAt - b.joinedAt);
+      if (members.length > 0) {
+        return members[team.placerIndex % members.length]!;
+      }
+      tempTurnIndex = nextRotation(tempTurnIndex, game.teams.length);
+      attempts += 1;
+    }
+    return null;
+  }
+
   // ── views ──────────────────────────────────────────────────────────────
 
   stateView(room: Room): RoomState {
@@ -1051,6 +1298,7 @@ export class RoomManager {
       winnerTeamId: game.winnerTeamId,
       remaining: Math.max(0, countAvailable(this.db, room.config.deck, room.config.musicSource, []) - game.used.size),
       countdownEndsAt: game.countdownEndsAt,
+      countdownReady: game.countdownReady,
       commentaryPending: game.active?.commentaryPending ?? false,
     };
   }

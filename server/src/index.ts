@@ -23,6 +23,7 @@ import { logger } from "./logger.js";
 import { getPublicClientOrigin } from "./public-origin.js";
 import { RoomManager } from "./room-service.js";
 import { registerSockets } from "./socket.js";
+import { createAdminRouter } from "./admin-routes.js";
 
 const db = initializeDatabase();
 healCorruptedArt(db).catch((err) => {
@@ -61,8 +62,12 @@ const manager = new RoomManager(db, {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("showcase:play", payload);
   },
+  roomDestroyed: (code) => {
+    io.to(code).emit("room:destroyed");
+  },
 });
 
+app.use("/api/admin", createAdminRouter(manager));
 registerSockets(io, manager);
 
 httpServer.listen(serverPort, serverHost, () => {

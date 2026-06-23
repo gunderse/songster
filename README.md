@@ -89,8 +89,29 @@ Songster runs entirely offline on your LAN:
 If AI services are down, the game automatically degrades gracefully to text-only captions and retro synthesizer sound effects.
 
 ## Ideas
-- Waiting for the reveal we need to see something more exciting on the hub screen instead of just a floating question mark.
-- End of game recap showing songs?
-- slot selection on the phone UI the button slot show stretch to fill the horizontal space available.  
-- at the end of game need a button to play another game
-- better plex import - working images confirmed year, auto tagging?
+- **DONE** Waiting for the reveal we need to see something more exciting on the hub screen instead of just a floating question mark.
+
+- **DONE** slot selection on the phone UI the button slot show stretch to fill the horizontal space available.  
+- **DONE** at the end of game need a button to play another game
+- **DONE** better plex import - working images confirmed year, auto tagging?
+- **DONE** emcees reveal the year every round, complete with fully voiced Multi-Character Showcase at the finale only by default. Include input params when starting the game to toggle segments at dramatic high points: steals, lead changes, streaks.
+
+- Need to make sure old games are cleaned up and old client sessions terminated. Need a way to browse and enter games from the admin screen and terminate a game and terminate all games.  Orphaned clients should stop polling a terminated game. Need a way to get back to the admin from the hub screen.  When creating a room need to provide an optional narrator voice(s) preferences (default is still random) and multi-character showcase preferences (default is still random).  The final showcase should be longer and entertaining incorporate all dramatic high points of the game, including play audio snippets of key songs in the form of a compeling reveal or recap.
+- End of game recap including song clips?
+- Simplify game start, join, hub flow.  Ability to kill game.
+- Pause game showing the QR code so others can join.
+- Allow people to join later
+- Allow players to upload songs from their phone and curate them using the library curate flow.
+- Need to understand the rules - how do teams work, is there a rotating captain?  How does steal work?
+- Old session need to expire eventually
+- the initial songster intro narration with cut off a second early
+
+FAILURE LOG -last dialog heard was: "You missed it again, Eric!..."
+server dev: {"level":30,"time":1782224817510,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"You missed it again, Eric! This 2003 track is \"Mr. Brightside,\" and with both teams tied at zero, we're starting over.","msg":"emcee line scripted"}
+server dev: {"level":30,"time":1782224822678,"pid":39788,"hostname":"MacBook-Pro-2025.local","characterName":"Barbara","durationMs":8220,"audioUrl":"/reveal-audio/reveal-wrong-2003-Mr-Brightside-Jacques-Lu-Cont--0-e57988d77e53f856.wav","msg":"generated reveal voice clip"}
+server dev: {"level":30,"time":1782224859174,"pid":39788,"hostname":"MacBook-Pro-2025.local","code":"MTUJ","turnId":2,"msg":"emcee: suspense ceiling hit; waiting for late voice"}
+server dev: {"level":30,"time":1782224884681,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"Robby is correct! \"Pump It\" by Black Eyed Peas was released in 2005, reaching massive chart success worldwide. Red 0, Blue 1.","msg":"emcee line scripted"}
+server dev: {"level":30,"time":1782224892599,"pid":39788,"hostname":"MacBook-Pro-2025.local","characterName":"Barbara","durationMs":9149,"audioUrl":"/reveal-audio/reveal-correct-2005-Pump-It-0-ed3fa5bc1d3ec47e.wav","msg":"generated reveal voice clip"}
+server dev: {"level":30,"time":1782224930213,"pid":39788,"hostname":"MacBook-Pro-2025.local","code":"MTUJ","turnId":3,"msg":"emcee: suspense ceiling hit; waiting for late voice"}
+server dev: {"level":30,"time":1782224936838,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"Perfect call! Simple Minds dropped \"Don't You (Forget About Me)\" in 1985. This one is tied at Red 1, Blue 1!","msg":"emcee line scripted"}
+server dev: {"level":40,"time":1782224942946,"pid":39788,"hostname":"MacBook-Pro-2025.local","error":"Voice API returned HTTP 500 for /api/external/generate.","hostName":"Barbara","attempt":0,"msg":"emcee voice generation failed"}

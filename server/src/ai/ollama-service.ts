@@ -5,6 +5,8 @@ export interface OllamaGenerateRequest {
   prompt: string;
   format?: "json";
   timeoutMs?: number;
+  /** Set to false to skip chain-of-thought reasoning (faster for short emcee lines). */
+  think?: boolean;
 }
 
 interface OllamaGenerateResponse {
@@ -23,15 +25,22 @@ export class OllamaService {
   ) {}
 
   async generate(request: OllamaGenerateRequest): Promise<string> {
+    const body: Record<string, unknown> = {
+      model: request.model,
+      prompt: request.prompt,
+      format: request.format,
+      stream: false,
+    };
+    // Pass think flag when explicitly set. Some models honour think:false by
+    // returning an empty response field (content is in the think block); we
+    // handle that below with a graceful fallback.
+    if (request.think !== undefined) {
+      body["think"] = request.think;
+    }
     const response = await fetch(`${this.baseUrl}/api/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: request.model,
-        prompt: request.prompt,
-        format: request.format,
-        stream: false,
-      }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(request.timeoutMs ?? this.defaultTimeoutMs),
     });
 
@@ -40,10 +49,16 @@ export class OllamaService {
     }
 
     const payload = (await response.json()) as OllamaGenerateResponse;
-    if (typeof payload.response !== "string") {
-      throw new Error("Ollama did not return a text response.");
+    let text = typeof payload.response === "string" ? payload.response : "";
+
+    // Strip any chain-of-thought <think>…</think> block the model may emit
+    // even when think:false was requested (model-specific behaviour).
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+    if (text.length === 0) {
+      throw new Error("Ollama returned an empty text response.");
     }
-    return payload.response;
+    return text;
   }
 
   async listModels(): Promise<string[]> {
