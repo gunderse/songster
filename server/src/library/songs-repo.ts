@@ -8,6 +8,7 @@ import type {
   SongListQuery,
   SongUpdate,
 } from "@songster/shared/library";
+import { computeSuspiciousFlags } from "./suspicious.js";
 
 interface SongRow {
   id: string;
@@ -93,9 +94,32 @@ export function listSongs(db: DatabaseType.Database, query: SongListQuery): Libr
   if (query.flaggedOnly) {
     where.push("suspicious_flags != '[]'");
   }
+  if (query.missingYear) {
+    where.push("year IS NULL");
+  }
   if (query.search !== undefined && query.search.length > 0) {
     where.push("(title LIKE @search OR artist LIKE @search OR album LIKE @search)");
     params.search = `%${query.search}%`;
+  }
+  if (query.searchTitle !== undefined && query.searchTitle.length > 0) {
+    where.push("title LIKE @searchTitle");
+    params.searchTitle = `%${query.searchTitle}%`;
+  }
+  if (query.searchArtist !== undefined && query.searchArtist.length > 0) {
+    where.push("artist LIKE @searchArtist");
+    params.searchArtist = `%${query.searchArtist}%`;
+  }
+  if (query.searchAlbum !== undefined && query.searchAlbum.length > 0) {
+    where.push("album LIKE @searchAlbum");
+    params.searchAlbum = `%${query.searchAlbum}%`;
+  }
+  if (query.yearStart !== undefined) {
+    where.push("year >= @yearStart");
+    params.yearStart = query.yearStart;
+  }
+  if (query.yearEnd !== undefined) {
+    where.push("year <= @yearEnd");
+    params.yearEnd = query.yearEnd;
   }
   if (query.genre !== undefined && query.genre.length > 0) {
     where.push("id IN (SELECT song_id FROM song_genres WHERE genre = @genre)");
@@ -170,6 +194,28 @@ export function updateSong(db: DatabaseType.Database, id: string, update: SongUp
     if (update.tags !== undefined) replaceSet(db, "song_tags", "tag", id, update.tags);
   });
   apply();
+
+  // Re-calculate and update suspicious flags dynamically
+  const updatedRaw = db.prepare("SELECT title, artist, album, raw_year, year, duration_s FROM songs WHERE id = ?").get(id) as {
+    title: string | null;
+    artist: string | null;
+    album: string | null;
+    raw_year: number | null;
+    year: number | null;
+    duration_s: number | null;
+  } | undefined;
+
+  if (updatedRaw) {
+    const newFlags = computeSuspiciousFlags({
+      title: updatedRaw.title,
+      artist: updatedRaw.artist,
+      album: updatedRaw.album,
+      rawYear: updatedRaw.raw_year,
+      year: updatedRaw.year,
+      durationS: updatedRaw.duration_s,
+    });
+    db.prepare("UPDATE songs SET suspicious_flags = ? WHERE id = ?").run(JSON.stringify(newFlags), id);
+  }
 
   return getSong(db, id);
 }

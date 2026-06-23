@@ -44,7 +44,7 @@ const HOST_TAGS = [
   "sophisticated",
   "heroic",
 ];
-const PREFERRED_HOST = "Ouldeon";
+const PREFERRED_HOST = "Fraiser";
 const OLLAMA_TIMEOUT_MS = 30_000;
 
 export class EmceeService {

@@ -5,6 +5,8 @@ conda activate ./.conda-env
 ./start-songster.sh
 ```
 
+Written with Antigravity IDE and Gemini 3.5 Flash based on an initial design concept by Claude Opus.
+
 Songster is a LAN-only, theater-style web party game — a digital reimagining of *Hitster* with **no cards and no QR-on-cards**. 
 
 Teams hear a song snippet on a shared **hub** screen (e.g. your TV or computer monitor) and place it chronologically on their team's timeline. The first team to build a correct timeline of 7 (or 10) songs wins the game. 

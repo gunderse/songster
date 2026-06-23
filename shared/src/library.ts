@@ -48,7 +48,13 @@ export interface LibraryStats {
 export const songListQuerySchema = z.object({
   status: z.union([songStatusSchema, z.literal("all")]).default("all"),
   flaggedOnly: z.coerce.boolean().default(false),
+  missingYear: z.coerce.boolean().default(false),
   search: z.string().trim().max(120).optional(),
+  searchTitle: z.string().trim().max(120).optional(),
+  searchArtist: z.string().trim().max(120).optional(),
+  searchAlbum: z.string().trim().max(120).optional(),
+  yearStart: z.coerce.number().int().min(1800).max(2100).optional(),
+  yearEnd: z.coerce.number().int().min(1800).max(2100).optional(),
   genre: z.string().trim().max(40).optional(),
   tag: z.string().trim().max(40).optional(),
   sort: z.enum(["title", "artist", "year", "flagged"]).default("flagged"),

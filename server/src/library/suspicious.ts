@@ -15,15 +15,17 @@ export interface SuspicionInput {
   title: string | null;
   artist: string | null;
   rawYear: number | null;
+  year?: number | null;
   durationS: number | null;
 }
 
 export function computeSuspiciousFlags(input: SuspicionInput): string[] {
   const flags: string[] = [];
+  const effectiveYear = input.year !== undefined && input.year !== null ? input.year : input.rawYear;
 
-  if (input.rawYear === null) {
+  if (effectiveYear === null) {
     flags.push("missing-year");
-  } else if (input.rawYear < 1900 || input.rawYear > new Date().getFullYear() + 1) {
+  } else if (effectiveYear < 1900 || effectiveYear > new Date().getFullYear() + 1) {
     flags.push("implausible-year");
   }
 

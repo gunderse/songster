@@ -29,16 +29,22 @@ export function fetchStats(): Promise<LibraryStats> {
   return http<LibraryStats>("/api/library/stats");
 }
 
-export function fetchSongs(query: Partial<SongListQuery>): Promise<LibrarySong[]> {
+export function fetchSongs(query: Partial<SongListQuery> & { missingYear?: boolean }, signal?: AbortSignal): Promise<LibrarySong[]> {
   const params = new URLSearchParams();
   if (query.status) params.set("status", query.status);
   if (query.flaggedOnly) params.set("flaggedOnly", "true");
+  if (query.missingYear) params.set("missingYear", "true");
   if (query.search) params.set("search", query.search);
+  if (query.searchTitle) params.set("searchTitle", query.searchTitle);
+  if (query.searchArtist) params.set("searchArtist", query.searchArtist);
+  if (query.searchAlbum) params.set("searchAlbum", query.searchAlbum);
+  if (query.yearStart !== undefined) params.set("yearStart", String(query.yearStart));
+  if (query.yearEnd !== undefined) params.set("yearEnd", String(query.yearEnd));
   if (query.genre) params.set("genre", query.genre);
   if (query.tag) params.set("tag", query.tag);
   if (query.sort) params.set("sort", query.sort);
   if (query.source) params.set("source", query.source);
-  return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`).then((r) => r.songs);
+  return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`, { signal }).then((r) => r.songs);
 }
 
 export function fetchFacets(): Promise<LibraryFacets> {
@@ -160,19 +166,53 @@ export interface PlexSearchResult {
   }>;
 }
 
-export function searchPlex(search: string, sort: string, start: number, size: number): Promise<PlexSearchResult> {
-  const params = new URLSearchParams();
-  if (search) params.set("search", search);
-  if (sort) params.set("sort", sort);
-  params.set("start", String(start));
-  params.set("size", String(size));
-  return http<PlexSearchResult>(`/api/library/plex/search?${params.toString()}`);
+export interface PlexSearchQuery {
+  search?: string;
+  searchTitle?: string;
+  searchArtist?: string;
+  searchAlbum?: string;
+  yearStart?: number;
+  yearEnd?: number;
+  missingYear?: boolean;
+  sort?: string;
+  start: number;
+  size: number;
 }
 
-export function importPlex(ratingKey: string, status: "approved" | "unreviewed" | "excluded"): Promise<{ success: boolean; songId: string; title: string; artist: string | null }> {
+export function searchPlex(query: PlexSearchQuery, signal?: AbortSignal): Promise<PlexSearchResult> {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.searchTitle) params.set("searchTitle", query.searchTitle);
+  if (query.searchArtist) params.set("searchArtist", query.searchArtist);
+  if (query.searchAlbum) params.set("searchAlbum", query.searchAlbum);
+  if (query.yearStart !== undefined) params.set("yearStart", String(query.yearStart));
+  if (query.yearEnd !== undefined) params.set("yearEnd", String(query.yearEnd));
+  if (query.missingYear) params.set("missingYear", "true");
+  if (query.sort) params.set("sort", query.sort);
+  params.set("start", String(query.start));
+  params.set("size", String(query.size));
+  return http<PlexSearchResult>(`/api/library/plex/search?${params.toString()}`, { signal });
+}
+
+export interface PlexImportOverrides {
+  title?: string;
+  artist?: string;
+  album?: string;
+  year?: number | null;
+  genres?: string[];
+  tags?: string[];
+  artUrl?: string;
+  snippetStartS?: number | null;
+}
+
+export function importPlex(
+  ratingKey: string,
+  status: "approved" | "unreviewed" | "excluded",
+  overrides?: PlexImportOverrides
+): Promise<{ success: boolean; songId: string; title: string; artist: string | null }> {
   return http<{ success: boolean; songId: string; title: string; artist: string | null }>("/api/library/plex/import", {
     method: "POST",
-    body: JSON.stringify({ ratingKey, status }),
+    body: JSON.stringify({ ratingKey, status, ...overrides }),
   });
 }
 
@@ -184,4 +224,27 @@ export function deleteSong(id: string): Promise<{ success: boolean; id: string }
 
 export function plexArtUrl(thumb: string): string {
   return `/api/library/plex/art?thumb=${encodeURIComponent(thumb)}`;
+}
+
+export interface WebMetadataResult {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+  artUrl: string | null;
+  genre: string | null;
+}
+
+export function lookupWeb(title: string, artist: string): Promise<WebMetadataResult[]> {
+  const params = new URLSearchParams();
+  params.set("title", title);
+  params.set("artist", artist);
+  return http<{ results: WebMetadataResult[] }>(`/api/library/lookup-web?${params.toString()}`).then((r) => r.results);
+}
+
+export function importWebArt(id: string, artUrl: string): Promise<LibrarySong> {
+  return http<{ song: LibrarySong }>(`/api/library/songs/${id}/import-web-art`, {
+    method: "POST",
+    body: JSON.stringify({ artUrl }),
+  }).then((r) => r.song);
 }

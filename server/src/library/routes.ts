@@ -30,6 +30,8 @@ const ART_EXT: Record<string, string> = {
 
 export function createLibraryRouter(db: DatabaseType.Database): Router {
   const router = Router();
+  let cachedPlexTracks: any[] | null = null;
+  let plexFetchPromise: Promise<any[]> | null = null;
 
   router.get("/settings/plex", (_req, res) => {
     const url = getSetting(db, "plex_url", "http://192.168.86.100:32400");
@@ -48,6 +50,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       res.status(400).json({ error: "Missing url or libraryName" });
       return;
     }
+    cachedPlexTracks = null;
     setSetting(db, "plex_url", url.trim());
     setSetting(db, "plex_library_name", libraryName.trim());
     res.json({ ok: true });
@@ -271,6 +274,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
   });
 
   router.post("/scan", async (_req, res) => {
+    cachedPlexTracks = null;
     try {
       const summary = await scanLibrary(db, { musicDir });
       res.json({ summary });
@@ -282,6 +286,13 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
 
   router.get("/plex/search", async (req, res) => {
     const searchQuery = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const searchTitle = typeof req.query.searchTitle === "string" ? req.query.searchTitle.trim() : "";
+    const searchArtist = typeof req.query.searchArtist === "string" ? req.query.searchArtist.trim() : "";
+    const searchAlbum = typeof req.query.searchAlbum === "string" ? req.query.searchAlbum.trim() : "";
+    const yearStart = req.query.yearStart ? Number(req.query.yearStart) : undefined;
+    const yearEnd = req.query.yearEnd ? Number(req.query.yearEnd) : undefined;
+    const missingYear = req.query.missingYear === "true";
+
     const sortField = typeof req.query.sort === "string" ? req.query.sort.trim() : "title";
     const start = Number(req.query.start) || 0;
     const size = Number(req.query.size) || 50;
@@ -298,91 +309,166 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     const cleanPlexUrl = url.trim().replace(/\/+$/, "");
 
     try {
-      const sectionsResponse = await fetch(`${cleanPlexUrl}/library/sections?X-Plex-Token=${token}`, {
-        headers: { "Accept": "application/json" }
-      });
-      if (!sectionsResponse.ok) {
-        throw new Error(`Failed to fetch library sections: ${sectionsResponse.status}`);
-      }
-      const sectionsData = await sectionsResponse.json() as any;
-      const section = (sectionsData.MediaContainer?.Directory || []).find(
-        (dir: any) => dir.title.toLowerCase() === libraryName.toLowerCase()
-      );
-      if (!section) {
-        throw new Error(`Library section "${libraryName}" not found`);
-      }
-      const sectionId = section.key;
+      if (!cachedPlexTracks) {
+        if (!plexFetchPromise) {
+          plexFetchPromise = (async () => {
+            logger.info("Plex cache empty. Fetching library sections...");
+            const sectionsResponse = await fetch(`${cleanPlexUrl}/library/sections?X-Plex-Token=${token}`, {
+              headers: { "Accept": "application/json" }
+            });
+            if (!sectionsResponse.ok) {
+              throw new Error(`Failed to fetch library sections: ${sectionsResponse.status}`);
+            }
+            const sectionsData = await sectionsResponse.json() as any;
+            const section = (sectionsData.MediaContainer?.Directory || []).find(
+              (dir: any) => dir.title.toLowerCase() === libraryName.toLowerCase()
+            );
+            if (!section) {
+              throw new Error(`Library section "${libraryName}" not found`);
+            }
+            const sectionId = section.key;
 
-      let plexUrlString = "";
-      if (searchQuery) {
-        plexUrlString = `${cleanPlexUrl}/library/sections/${sectionId}/search?type=10&query=${encodeURIComponent(searchQuery)}&sort=${sortField}&X-Plex-Token=${token}`;
-      } else {
-        plexUrlString = `${cleanPlexUrl}/library/sections/${sectionId}/all?type=10&sort=${sortField}&X-Plex-Token=${token}`;
-      }
+            logger.info(`Fetching all tracks from Plex section ${sectionId}...`);
+            const plexUrlString = `${cleanPlexUrl}/library/sections/${sectionId}/all?type=10&X-Plex-Token=${token}`;
+            const tracksResponse = await fetch(plexUrlString, {
+              headers: { "Accept": "application/json" }
+            });
 
-      const tracksResponse = await fetch(plexUrlString, {
-        headers: {
-          "Accept": "application/json",
-          "X-Plex-Container-Start": String(start),
-          "X-Plex-Container-Size": String(size)
+            if (!tracksResponse.ok) {
+              throw new Error(`Plex tracks request failed: status ${tracksResponse.status}`);
+            }
+
+            const tracksData = await tracksResponse.json() as any;
+            const tracks = tracksData.MediaContainer?.Metadata || [];
+            logger.info(`Fetched ${tracks.length} tracks. Mapping metadata...`);
+
+            const mapped = tracks.map((track: any) => {
+              const part = track.Media?.[0]?.Part?.[0];
+              const partFile = part?.file || "";
+              const plexPartKey = part?.key || "";
+              const pathMeta = parsePlexFilePath(partFile);
+
+              let finalTitle = track.title || "";
+              if (finalTitle.length === 0 || finalTitle.toLowerCase() === "file") {
+                finalTitle = pathMeta.title || (plexPartKey ? titleFromFileName(`plex://${plexPartKey}`) : "Unknown Track");
+              }
+
+              const finalArtist = track.grandparentTitle || pathMeta.artist || null;
+              const finalAlbum = track.parentTitle || pathMeta.album || null;
+              const finalYear = track.year || 
+                                track.parentYear || 
+                                (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
+                                pathMeta.year || 
+                                null;
+
+              const durationS = track.duration ? Math.round(track.duration / 1000) : null;
+
+              return {
+                ratingKey: track.ratingKey,
+                key: plexPartKey,
+                title: finalTitle,
+                artist: finalArtist,
+                album: finalAlbum,
+                year: finalYear,
+                durationS,
+                thumb: track.thumb || track.parentThumb || track.grandparentThumb || null,
+                addedAt: track.addedAt || 0,
+              };
+            });
+
+            logger.info(`Plex cache populated with ${mapped.length} tracks.`);
+            return mapped;
+          })();
         }
-      });
 
-      if (!tracksResponse.ok) {
-        throw new Error(`Plex search request failed: status ${tracksResponse.status}`);
+        try {
+          cachedPlexTracks = await plexFetchPromise;
+        } catch (err) {
+          plexFetchPromise = null;
+          throw err;
+        } finally {
+          plexFetchPromise = null;
+        }
       }
 
-      const tracksData = await tracksResponse.json() as any;
-      const tracks = tracksData.MediaContainer?.Metadata || [];
-      const totalSize = tracksData.MediaContainer?.totalSize || tracks.length;
-
+      // Map dynamic isImported status using local DB
       const importedMap = new Map<string, { id: string; status: string }>();
       const dbSongs = db.prepare("SELECT id, file_path, status FROM songs").all() as Array<{ id: string; file_path: string; status: string }>;
       for (const row of dbSongs) {
         importedMap.set(row.file_path, { id: row.id, status: row.status });
       }
 
-      const results = tracks.map((track: any) => {
-        const part = track.Media?.[0]?.Part?.[0];
-        const partFile = part?.file || "";
-        const plexPartKey = part?.key || "";
-        const relativePath = `plex://${plexPartKey}`;
-        const pathMeta = parsePlexFilePath(partFile);
-
-        let finalTitle = track.title || "";
-        if (finalTitle.length === 0 || finalTitle.toLowerCase() === "file") {
-          finalTitle = pathMeta.title || (plexPartKey ? titleFromFileName(relativePath) : "Unknown Track");
-        }
-
-        const finalArtist = track.grandparentTitle || pathMeta.artist || null;
-        const finalAlbum = track.parentTitle || pathMeta.album || null;
-        const finalYear = track.year || 
-                          track.parentYear || 
-                          (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
-                          pathMeta.year || 
-                          null;
-
-        const durationS = track.duration ? Math.round(track.duration / 1000) : null;
+      let results = cachedPlexTracks.map((t: any) => {
+        const relativePath = `plex://${t.key}`;
         const imported = importedMap.get(relativePath);
-
         return {
-          ratingKey: track.ratingKey,
-          key: plexPartKey,
-          title: finalTitle,
-          artist: finalArtist,
-          album: finalAlbum,
-          year: finalYear,
-          durationS,
-          thumb: track.thumb || track.parentThumb || track.grandparentThumb || null,
+          ...t,
           isImported: !!imported,
           songId: imported?.id || null,
           status: imported?.status || null,
         };
       });
 
+      // Filter in-memory
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        results = results.filter(
+          (t) =>
+            (t.title && t.title.toLowerCase().includes(q)) ||
+            (t.artist && t.artist.toLowerCase().includes(q)) ||
+            (t.album && t.album.toLowerCase().includes(q))
+        );
+      }
+      if (searchTitle) {
+        results = results.filter((t: any) => t.title && t.title.toLowerCase().includes(searchTitle.toLowerCase()));
+      }
+      if (searchArtist) {
+        results = results.filter((t: any) => t.artist && t.artist.toLowerCase().includes(searchArtist.toLowerCase()));
+      }
+      if (searchAlbum) {
+        results = results.filter((t: any) => t.album && t.album.toLowerCase().includes(searchAlbum.toLowerCase()));
+      }
+      if (yearStart !== undefined && !isNaN(yearStart)) {
+        results = results.filter((t: any) => t.year !== null && t.year >= yearStart);
+      }
+      if (yearEnd !== undefined && !isNaN(yearEnd)) {
+        results = results.filter((t: any) => t.year !== null && t.year <= yearEnd);
+      }
+      if (missingYear) {
+        results = results.filter((t: any) => t.year === null);
+      }
+
+      // Sort in-memory
+      if (sortField === "titleSort") {
+        results.sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" }));
+      } else if (sortField.includes("artist")) {
+        results.sort((a, b) => {
+          const artCompare = (a.artist || "").localeCompare(b.artist || "", undefined, { sensitivity: "base" });
+          if (artCompare !== 0) return artCompare;
+          const albCompare = (a.album || "").localeCompare(b.album || "", undefined, { sensitivity: "base" });
+          if (albCompare !== 0) return albCompare;
+          return (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
+        });
+      } else if (sortField.includes("album")) {
+        results.sort((a, b) => {
+          const albCompare = (a.album || "").localeCompare(b.album || "", undefined, { sensitivity: "base" });
+          if (albCompare !== 0) return albCompare;
+          return (a.title || "").localeCompare(b.title || "", undefined, { sensitivity: "base" });
+        });
+      } else if (sortField === "year:desc") {
+        results.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+      } else if (sortField === "year") {
+        results.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999));
+      } else if (sortField === "addedAt:desc") {
+        results.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
+      }
+
+      const totalSize = results.length;
+      const paginatedResults = results.slice(start, start + size);
+
       res.json({
         totalSize,
-        results
+        results: paginatedResults
       });
 
     } catch (err: any) {
@@ -485,38 +571,70 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       const partFile = part.file || "";
       const pathMeta = parsePlexFilePath(partFile);
 
-      let finalTitle = track.title || "";
+      let finalTitle = typeof req.body.title === "string" ? req.body.title : (track.title || "");
       if (finalTitle.length === 0 || finalTitle.toLowerCase() === "file") {
         finalTitle = pathMeta.title || titleFromFileName(relativePath);
       }
 
-      const finalArtist = track.grandparentTitle || pathMeta.artist || null;
-      const finalAlbum = track.parentTitle || pathMeta.album || null;
-      const parsedYear = track.year || 
-                        track.parentYear || 
-                        (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
-                        pathMeta.year || 
-                        null;
+      const finalArtist = typeof req.body.artist === "string" ? req.body.artist : (track.grandparentTitle || pathMeta.artist || null);
+      const finalAlbum = typeof req.body.album === "string" ? req.body.album : (track.parentTitle || pathMeta.album || null);
+      
+      let parsedYear: number | null = null;
+      if (req.body.year !== undefined) {
+        parsedYear = typeof req.body.year === "number" ? req.body.year : null;
+      } else {
+        parsedYear = track.year || 
+                     track.parentYear || 
+                     (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
+                     pathMeta.year || 
+                     null;
+      }
 
       const durationS = track.duration ? Math.round(track.duration / 1000) : null;
       
       let artPath: string | null = null;
-      const thumb = track.thumb || track.parentThumb || track.grandparentThumb;
-      if (thumb) {
+
+      // Try custom web artUrl if provided
+      const customArtUrl = req.body.artUrl;
+      if (typeof customArtUrl === "string" && customArtUrl.length > 0) {
         try {
-          const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${token}`);
+          const artResponse = await fetch(customArtUrl);
           if (artResponse.ok) {
             const buffer = await artResponse.arrayBuffer();
             const nodeBuffer = Buffer.from(buffer);
             if (isValidImageSignature(nodeBuffer)) {
               const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
               const fileName = `${id}.${ext}`;
+              await mkdir(artDir, { recursive: true });
               await writeFile(path.join(artDir, fileName), nodeBuffer);
               artPath = path.posix.join("art", fileName);
             }
           }
         } catch (err) {
-          logger.warn({ ratingKey, error: (err as Error).message }, "failed to download Plex art during import");
+          logger.warn({ ratingKey, customArtUrl, error: (err as Error).message }, "failed to download custom web art during import");
+        }
+      }
+
+      // Fallback to Plex thumbnail if custom web art didn't load or wasn't provided
+      if (!artPath) {
+        const thumb = track.thumb || track.parentThumb || track.grandparentThumb;
+        if (thumb) {
+          try {
+            const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${token}`);
+            if (artResponse.ok) {
+              const buffer = await artResponse.arrayBuffer();
+              const nodeBuffer = Buffer.from(buffer);
+              if (isValidImageSignature(nodeBuffer)) {
+                const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
+                const fileName = `${id}.${ext}`;
+                await mkdir(artDir, { recursive: true });
+                await writeFile(path.join(artDir, fileName), nodeBuffer);
+                artPath = path.posix.join("art", fileName);
+              }
+            }
+          } catch (err) {
+            logger.warn({ ratingKey, error: (err as Error).message }, "failed to download Plex art during import");
+          }
         }
       }
 
@@ -562,6 +680,21 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
         for (const g of track.Genre) {
           if (g.tag) ensureGenre.run(id, g.tag);
         }
+      }
+
+      // Apply overrides (such as tags/genres) using updateSong
+      const overrides: any = {};
+      if (req.body.title !== undefined) overrides.title = req.body.title;
+      if (req.body.artist !== undefined) overrides.artist = req.body.artist;
+      if (req.body.album !== undefined) overrides.album = req.body.album;
+      if (req.body.year !== undefined) overrides.year = req.body.year;
+      if (req.body.genres !== undefined) overrides.genres = req.body.genres;
+      if (req.body.tags !== undefined) overrides.tags = req.body.tags;
+      if (req.body.status !== undefined) overrides.status = req.body.status;
+      if (req.body.snippetStartS !== undefined) overrides.snippetStartS = req.body.snippetStartS;
+
+      if (Object.keys(overrides).length > 0) {
+        updateSong(db, id, overrides);
       }
 
       res.json({ success: true, songId: id, title: finalTitle, artist: finalArtist });
@@ -634,6 +767,113 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     } catch (err) {
       logger.error({ id, error: (err as Error).message }, "Failed to delete song");
       res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  async function lookupWebMetadata(title: string, artist: string): Promise<any[]> {
+    const term = `${artist} ${title}`.trim();
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=5`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`iTunes search failed: status ${response.status}`);
+    }
+    const json = await response.json() as any;
+    const results = json.results || [];
+    return results.map((item: any) => {
+      let year: number | null = null;
+      if (item.releaseDate) {
+        const y = Number(item.releaseDate.slice(0, 4));
+        if (!isNaN(y)) year = y;
+      }
+      const artUrl = item.artworkUrl100 ? item.artworkUrl100.replace("100x100bb.jpg", "600x600bb.jpg") : null;
+      return {
+        title: item.trackName || null,
+        artist: item.artistName || null,
+        album: item.collectionName || null,
+        year,
+        artUrl,
+        genre: item.primaryGenreName || null,
+      };
+    });
+  }
+
+  router.get("/lookup-web", async (req, res) => {
+    const title = typeof req.query.title === "string" ? req.query.title.trim() : "";
+    const artist = typeof req.query.artist === "string" ? req.query.artist.trim() : "";
+
+    if (title.length === 0 && artist.length === 0) {
+      res.json({ results: [] });
+      return;
+    }
+    try {
+      const results = await lookupWebMetadata(title, artist);
+      res.json({ results });
+    } catch (error) {
+      logger.warn({ error: getErrorMessage(error) }, "generic web lookup failed");
+      res.status(502).json({ error: getErrorMessage(error) });
+    }
+  });
+
+  router.get("/songs/:id/lookup-web", async (req, res) => {
+    const id = req.params.id;
+    if (typeof id !== "string") {
+      res.sendStatus(400);
+      return;
+    }
+    const song = getSong(db, id);
+    if (song === null) {
+      res.sendStatus(404);
+      return;
+    }
+    const title = typeof req.query.title === "string" ? req.query.title.trim() : (song.title || "");
+    const artist = typeof req.query.artist === "string" ? req.query.artist.trim() : (song.artist || "");
+
+    if (title.length === 0 && artist.length === 0) {
+      res.json({ results: [] });
+      return;
+    }
+    try {
+      const results = await lookupWebMetadata(title, artist);
+      res.json({ results });
+    } catch (error) {
+      logger.warn({ id, error: getErrorMessage(error) }, "web lookup failed");
+      res.status(502).json({ error: getErrorMessage(error) });
+    }
+  });
+
+  router.post("/songs/:id/import-web-art", async (req, res) => {
+    const id = req.params.id;
+    const { artUrl } = req.body;
+    if (typeof id !== "string" || typeof artUrl !== "string") {
+      res.sendStatus(400);
+      return;
+    }
+    const song = getSong(db, id);
+    if (song === null) {
+      res.sendStatus(404);
+      return;
+    }
+    try {
+      const artResponse = await fetch(artUrl);
+      if (!artResponse.ok) {
+        throw new Error(`Failed to fetch image from web: status ${artResponse.status}`);
+      }
+      const buffer = await artResponse.arrayBuffer();
+      const nodeBuffer = Buffer.from(buffer);
+      if (!isValidImageSignature(nodeBuffer)) {
+        throw new Error("Invalid image format or signature");
+      }
+      const contentType = artResponse.headers.get("content-type") || "image/jpeg";
+      const ext = extensionForImage(contentType);
+      const fileName = `${id}.${ext}`;
+
+      await mkdir(artDir, { recursive: true });
+      await writeFile(path.join(artDir, fileName), nodeBuffer);
+      const updated = setSongArt(db, id, path.posix.join("art", fileName));
+      res.json({ song: updated });
+    } catch (error) {
+      logger.error({ id, artUrl, error: getErrorMessage(error) }, "web art import failed");
+      res.status(500).json({ error: getErrorMessage(error) });
     }
   });
 
