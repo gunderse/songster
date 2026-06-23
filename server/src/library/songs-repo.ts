@@ -8,6 +8,7 @@ import type {
   SongListQuery,
   SongUpdate,
 } from "@songster/shared/library";
+import { computeSuspiciousFlags } from "./suspicious.js";
 
 interface SongRow {
   id: string;
@@ -40,12 +41,13 @@ function toDto(row: SongRow, genres: string[], tags: string[]): LibrarySong {
     tags,
     rawYear: row.raw_year,
     year: row.year,
-    snippetStartS: row.snippet_start_s,
+    snippetStartS: row.snippet_start_s ?? 30,
     snippetLenS: row.snippet_len_s,
     durationS: row.duration_s,
     hasArt: row.art_path !== null,
     status: (row.status as LibrarySong["status"]) ?? "unreviewed",
     suspiciousFlags: parseFlags(row.suspicious_flags),
+    source: row.file_path.startsWith("plex://") ? "plex" : "local",
   };
 }
 
@@ -92,9 +94,32 @@ export function listSongs(db: DatabaseType.Database, query: SongListQuery): Libr
   if (query.flaggedOnly) {
     where.push("suspicious_flags != '[]'");
   }
+  if (query.missingYear) {
+    where.push("year IS NULL");
+  }
   if (query.search !== undefined && query.search.length > 0) {
     where.push("(title LIKE @search OR artist LIKE @search OR album LIKE @search)");
     params.search = `%${query.search}%`;
+  }
+  if (query.searchTitle !== undefined && query.searchTitle.length > 0) {
+    where.push("title LIKE @searchTitle");
+    params.searchTitle = `%${query.searchTitle}%`;
+  }
+  if (query.searchArtist !== undefined && query.searchArtist.length > 0) {
+    where.push("artist LIKE @searchArtist");
+    params.searchArtist = `%${query.searchArtist}%`;
+  }
+  if (query.searchAlbum !== undefined && query.searchAlbum.length > 0) {
+    where.push("album LIKE @searchAlbum");
+    params.searchAlbum = `%${query.searchAlbum}%`;
+  }
+  if (query.yearStart !== undefined) {
+    where.push("year >= @yearStart");
+    params.yearStart = query.yearStart;
+  }
+  if (query.yearEnd !== undefined) {
+    where.push("year <= @yearEnd");
+    params.yearEnd = query.yearEnd;
   }
   if (query.genre !== undefined && query.genre.length > 0) {
     where.push("id IN (SELECT song_id FROM song_genres WHERE genre = @genre)");
@@ -103,6 +128,13 @@ export function listSongs(db: DatabaseType.Database, query: SongListQuery): Libr
   if (query.tag !== undefined && query.tag.length > 0) {
     where.push("id IN (SELECT song_id FROM song_tags WHERE tag = @tag)");
     params.tag = query.tag;
+  }
+  if (query.source !== undefined && query.source !== "all") {
+    if (query.source === "local") {
+      where.push("file_path NOT LIKE 'plex://%'");
+    } else if (query.source === "plex") {
+      where.push("file_path LIKE 'plex://%'");
+    }
   }
 
   const orderBy =
@@ -162,6 +194,28 @@ export function updateSong(db: DatabaseType.Database, id: string, update: SongUp
     if (update.tags !== undefined) replaceSet(db, "song_tags", "tag", id, update.tags);
   });
   apply();
+
+  // Re-calculate and update suspicious flags dynamically
+  const updatedRaw = db.prepare("SELECT title, artist, album, raw_year, year, duration_s FROM songs WHERE id = ?").get(id) as {
+    title: string | null;
+    artist: string | null;
+    album: string | null;
+    raw_year: number | null;
+    year: number | null;
+    duration_s: number | null;
+  } | undefined;
+
+  if (updatedRaw) {
+    const newFlags = computeSuspiciousFlags({
+      title: updatedRaw.title,
+      artist: updatedRaw.artist,
+      album: updatedRaw.album,
+      rawYear: updatedRaw.raw_year,
+      year: updatedRaw.year,
+      durationS: updatedRaw.duration_s,
+    });
+    db.prepare("UPDATE songs SET suspicious_flags = ? WHERE id = ?").run(JSON.stringify(newFlags), id);
+  }
 
   return getSong(db, id);
 }

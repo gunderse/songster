@@ -29,9 +29,16 @@ export function Join({ initialCode }: { initialCode: string | null }) {
       const j = joinedRef.current;
       if (j !== null) socket.emit("room:join", { code: j.code, name: j.name }, () => undefined);
     }
+    function onDestroyed() {
+      setPlayerId(null);
+      joinedRef.current = null;
+      setError("This room has been destroyed by the host.");
+    }
     socket.on("connect", onReconnect);
+    socket.on("room:destroyed", onDestroyed);
     return () => {
       socket.off("connect", onReconnect);
+      socket.off("room:destroyed", onDestroyed);
     };
   }, []);
 

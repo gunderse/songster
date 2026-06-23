@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -16,12 +18,17 @@ import { registerAudioRoutes } from "./audio-stream.js";
 import { serverHost, serverPort } from "./config.js";
 import { initializeDatabase } from "./db.js";
 import { createLibraryRouter } from "./library/routes.js";
+import { healCorruptedArt } from "./library/scan.js";
 import { logger } from "./logger.js";
 import { getPublicClientOrigin } from "./public-origin.js";
 import { RoomManager } from "./room-service.js";
 import { registerSockets } from "./socket.js";
+import { createAdminRouter } from "./admin-routes.js";
 
 const db = initializeDatabase();
+healCorruptedArt(db).catch((err) => {
+  logger.error({ err: err instanceof Error ? err.message : String(err) }, "Failed to heal corrupted art on startup");
+});
 
 const app = express();
 app.use(express.json());
@@ -55,8 +62,12 @@ const manager = new RoomManager(db, {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("showcase:play", payload);
   },
+  roomDestroyed: (code) => {
+    io.to(code).emit("room:destroyed");
+  },
 });
 
+app.use("/api/admin", createAdminRouter(manager));
 registerSockets(io, manager);
 
 httpServer.listen(serverPort, serverHost, () => {

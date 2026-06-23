@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile, unlink, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type DatabaseType from "better-sqlite3";
@@ -7,6 +7,7 @@ import type DatabaseType from "better-sqlite3";
 import { logger } from "../logger.js";
 import { extractMetadata } from "./metadata.js";
 import { computeSuspiciousFlags } from "./suspicious.js";
+import { getSetting } from "./settings-repo.js";
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".m4a", ".flac", ".ogg", ".oga", ".opus", ".wav", ".aac"]);
 const artDir = path.resolve(import.meta.dirname, "../../data/art");
@@ -23,6 +24,7 @@ export interface ScanSummary {
   flagged: number;
   withArt: number;
   errors: number;
+  plexError?: string;
 }
 
 interface SongUpsertRow {
@@ -41,13 +43,13 @@ interface SongUpsertRow {
   now: number;
 }
 
-function opaqueId(relativePath: string): string {
+export function opaqueId(relativePath: string): string {
   return createHash("sha256").update(relativePath).digest("hex").slice(0, 16);
 }
 
 /** Default snippet anchor: a quarter of the way in, capped at 30s. The curator can scrub. */
-function defaultSnippetStart(durationS: number | null): number | null {
-  if (durationS === null || durationS <= 0) return null;
+export function defaultSnippetStart(durationS: number | null): number {
+  if (durationS === null || durationS <= 0) return 30;
   return Math.round(Math.min(30, durationS * 0.25));
 }
 
@@ -58,16 +60,22 @@ function genreFromRelativePath(relativePath: string, fallback: string | null): s
 }
 
 /** Last-resort display title for untagged files, derived from the file name. */
-function titleFromFileName(relativePath: string): string {
+export function titleFromFileName(relativePath: string): string {
   const base = path.basename(relativePath, path.extname(relativePath)).replace(/_/g, " ").trim();
   return base.length > 0 ? base : relativePath;
 }
 
-function extensionForImage(format: string): string {
+export function extensionForImage(format: string): string {
   if (format.includes("png")) return "png";
   if (format.includes("webp")) return "webp";
   if (format.includes("gif")) return "gif";
   return "jpg";
+}
+
+export function isValidImageSignature(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  const hex = buffer.slice(0, 4).toString("hex");
+  return hex.startsWith("ffd8") || hex === "89504e47" || hex === "47494638" || hex === "52494646";
 }
 
 async function readDirSafe(root: string) {
@@ -90,6 +98,232 @@ async function* walkAudioFiles(root: string): AsyncGenerator<string> {
     }
   }
 }
+
+export function parsePlexFilePath(filePath: string): { title: string; artist: string | null; album: string | null; year: number | null } {
+  if (!filePath) {
+    return { title: "Unknown Track", artist: null, album: null, year: null };
+  }
+
+  // Normalize separators
+  const normalizedPath = filePath.replace(/\\/g, "/");
+  const parts = normalizedPath.split("/");
+  const fileNameWithExt = parts[parts.length - 1] || "";
+  const parentFolder = parts[parts.length - 2] || "";
+  const grandparentFolder = parts[parts.length - 3] || "";
+
+  // 1. Get base filename without extension
+  const extIndex = fileNameWithExt.lastIndexOf('.');
+  let fileName = extIndex !== -1 ? fileNameWithExt.slice(0, extIndex) : fileNameWithExt;
+
+  // Clean up common download suffixes from filename first to avoid interfering with splits
+  fileName = fileName.replace(/[- ]*www\.[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+/ig, "");
+  fileName = fileName.trim();
+
+  // Strip track numbers/disc prefixes at the beginning
+  // Matches "01 - Title", "01. Title", "01 Title", "1-01 Title", "A1 - Title"
+  fileName = fileName.replace(/^[0-9]+[-. ]+/, "");
+  fileName = fileName.replace(/^[0-9]+[-]+/, "");
+  fileName = fileName.replace(/^[a-zA-Z][0-9]+[-. ]+/, "");
+  fileName = fileName.trim();
+
+  let artist: string | null = null;
+  let title = fileName;
+
+  // If the filename contains " - ", split it into artist and title
+  const dashIndex = fileName.indexOf(" - ");
+  if (dashIndex !== -1) {
+    const leftPart = fileName.slice(0, dashIndex).trim();
+    const rightPart = fileName.slice(dashIndex + 3).trim();
+    if (leftPart.length > 0 && rightPart.length > 0) {
+      artist = leftPart;
+      title = rightPart;
+    }
+  }
+
+  // 2. Parse Album
+  let album: string | null = parentFolder ? parentFolder.trim() : null;
+  if (album) {
+    album = album.replace(/[- ]*www\.[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+/ig, "");
+    album = album.replace(/\+ cover/gi, "");
+    album = album.trim();
+  }
+
+  // 3. Parse Year from Album folder (e.g. "I Robot (Soundtrack) 2004")
+  let year: number | null = null;
+  if (album) {
+    const yearMatch = album.match(/\b(19\d\d|20\d\d)\b/);
+    if (yearMatch && yearMatch[1]) {
+      year = Number(yearMatch[1]);
+      // Remove year from album name
+      album = album.replace(/\b(19\d\d|20\d\d)\b/, "").replace(/\(\s*\)/g, "").replace(/\[\s*\]/g, "").trim();
+    }
+  }
+
+  // 4. Parse Artist from grandparent folder if not already parsed from filename
+  if (!artist && grandparentFolder) {
+    const commonRoots = new Set(["music", "multimedia", "audio", "sound", "songs", "cachedev1_data", "share", "home", "users", "volume1", "volume2"]);
+    const cleanGrandparent = grandparentFolder.trim();
+    if (!commonRoots.has(cleanGrandparent.toLowerCase())) {
+      artist = cleanGrandparent;
+    }
+  }
+
+  // Common fallbacks for soundtrack folders
+  if (!artist && album && (album.toLowerCase().includes("soundtrack") || album.toLowerCase().includes("ost"))) {
+    artist = "Soundtrack";
+  }
+
+  if (title.toLowerCase() === "file" || title.length === 0) {
+    title = "Unknown Track";
+  }
+
+  return { title, artist, album, year };
+}
+
+async function scanPlexLibrary(
+  db: DatabaseType.Database,
+  plexUrl: string,
+  plexToken: string,
+  plexLibraryName: string,
+  scanLimit: number,
+  summary: ScanSummary,
+  upsert: DatabaseType.Statement,
+  ensureGenre: DatabaseType.Statement,
+  existing: Set<string>
+): Promise<void> {
+  const cleanPlexUrl = plexUrl.replace(/\/+$/, "");
+  logger.info({ plexUrl: cleanPlexUrl, libraryName: plexLibraryName, limit: scanLimit }, "scanning Plex music library");
+  
+  const sectionsResponse = await fetch(`${cleanPlexUrl}/library/sections`, {
+    headers: {
+      "Accept": "application/json",
+      "X-Plex-Token": plexToken,
+    },
+  });
+  if (!sectionsResponse.ok) {
+    throw new Error(`Failed to fetch sections from Plex: status ${sectionsResponse.status}`);
+  }
+  const sectionsData = await sectionsResponse.json() as any;
+  const section = (sectionsData.MediaContainer?.Directory || []).find(
+    (dir: any) => dir.title.toLowerCase() === plexLibraryName.toLowerCase()
+  );
+  if (!section) {
+    throw new Error(`Plex library section "${plexLibraryName}" not found. Available: ${(sectionsData.MediaContainer?.Directory || []).map((d: any) => d.title).join(", ")}`);
+  }
+  const sectionId = section.key;
+
+  const tracksResponse = await fetch(`${cleanPlexUrl}/library/sections/${sectionId}/all?type=10&X-Plex-Token=${plexToken}`, {
+    headers: {
+      "Accept": "application/json",
+    },
+  });
+  if (!tracksResponse.ok) {
+    throw new Error(`Failed to fetch tracks from Plex: status ${tracksResponse.status}`);
+  }
+  const tracksData = await tracksResponse.json() as any;
+  const tracks = tracksData.MediaContainer?.Metadata || [];
+  
+  logger.info({ totalTracksFound: tracks.length }, "Plex tracks retrieved");
+  
+  const tracksToScan = tracks.slice(0, scanLimit);
+  for (const track of tracksToScan) {
+    summary.scanned += 1;
+    try {
+      const part = track.Media?.[0]?.Part?.[0];
+      if (!part || !part.key) {
+        continue;
+      }
+      
+      const plexPartKey = part.key;
+      const relativePath = `plex://${plexPartKey}`;
+      const id = opaqueId(relativePath);
+      
+      let artPath: string | null = null;
+      const thumb = track.thumb || track.parentThumb || track.grandparentThumb;
+      if (thumb) {
+        try {
+          const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${plexToken}`);
+          if (artResponse.ok) {
+            const buffer = await artResponse.arrayBuffer();
+            const nodeBuffer = Buffer.from(buffer);
+            if (isValidImageSignature(nodeBuffer)) {
+              const ext = extensionForImage(artResponse.headers.get("content-type") || "image/jpeg");
+              const fileName = `${id}.${ext}`;
+              await writeFile(path.join(artDir, fileName), nodeBuffer);
+              artPath = path.posix.join("art", fileName);
+              summary.withArt += 1;
+            } else {
+              logger.warn({ track: track.title, thumb }, "Plex art returned invalid image signature; discarded");
+            }
+          }
+        } catch (err) {
+          logger.warn({ track: track.title, error: (err as Error).message }, "failed to download Plex art");
+        }
+      }
+      
+      const partFile = part.file || "";
+      const pathMeta = parsePlexFilePath(partFile);
+
+      let finalTitle = track.title || "";
+      if (finalTitle.length === 0 || finalTitle.toLowerCase() === "file") {
+        finalTitle = pathMeta.title || titleFromFileName(relativePath);
+      }
+
+      const finalArtist = track.grandparentTitle || pathMeta.artist || null;
+      const finalAlbum = track.parentTitle || pathMeta.album || null;
+
+      const parsedYear = track.year || 
+                        track.parentYear || 
+                        (track.originallyAvailableAt ? Number(track.originallyAvailableAt.slice(0, 4)) : null) || 
+                        pathMeta.year || 
+                        null;
+
+      const durationS = track.duration ? Math.round(track.duration / 1000) : null;
+      const primaryGenre = track.Genre?.[0]?.tag || section.title;
+
+      const flags = computeSuspiciousFlags({
+        album: finalAlbum,
+        title: finalTitle,
+        artist: finalArtist,
+        rawYear: parsedYear,
+        durationS,
+      });
+      if (flags.length > 0) summary.flagged += 1;
+
+      const row: SongUpsertRow = {
+        id,
+        file_path: relativePath,
+        title: finalTitle,
+        artist: finalArtist,
+        album: finalAlbum,
+        genre: primaryGenre,
+        tag_genre: track.Genre?.[0]?.tag || null,
+        raw_year: parsedYear,
+        snippet_start_s: defaultSnippetStart(durationS),
+        duration_s: durationS,
+        art_path: artPath,
+        suspicious_flags: JSON.stringify(flags),
+        now: Date.now(),
+      };
+      upsert.run(row);
+
+      if (row.genre !== null && row.genre.length > 0) ensureGenre.run(id, row.genre);
+      
+      if (track.Genre) {
+        for (const g of track.Genre) {
+          if (g.tag) ensureGenre.run(id, g.tag);
+        }
+      }
+
+      if (existing.has(relativePath)) summary.updated += 1;
+      else summary.inserted += 1;
+    } catch (error) {
+      summary.errors += 1;
+      logger.warn({ track: track.title, error: (error as Error).message }, "failed to ingest Plex track");
+    }
+  }
+}
+
 
 export async function scanLibrary(db: DatabaseType.Database, options: ScanOptions): Promise<ScanSummary> {
   const musicDir = path.resolve(options.musicDir);
@@ -137,6 +371,17 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     errors: 0,
   };
 
+  const plexUrlEnv = process.env.SONGSTER_PLEX_URL?.trim() || "";
+  const plexTokenEnv = process.env.SONGSTER_PLEX_TOKEN?.trim() || "";
+  const plexLibraryNameEnv = process.env.SONGSTER_PLEX_LIBRARY_NAME?.trim() || "";
+  const plexScanLimitEnv = process.env.SONGSTER_PLEX_SCAN_LIMIT?.trim() || "";
+
+  const plexUrl = plexUrlEnv || getSetting(db, "plex_url", "http://192.168.86.100:32400");
+  const plexToken = plexTokenEnv || getSetting(db, "plex_token", "");
+  const plexLibraryName = plexLibraryNameEnv || getSetting(db, "plex_library_name", "Music");
+  const plexScanLimit = plexScanLimitEnv ? Number(plexScanLimitEnv) : Number(getSetting(db, "plex_scan_limit", "100"));
+
+  // 1. Scan local files
   for await (const fullPath of walkAudioFiles(musicDir)) {
     summary.scanned += 1;
     const relativePath = path.relative(musicDir, fullPath);
@@ -190,7 +435,10 @@ export async function scanLibrary(db: DatabaseType.Database, options: ScanOption
     }
   }
 
+
+
   flagArtistYearOutliers(db);
+  await healCorruptedArt(db);
 
   return summary;
 }
@@ -229,5 +477,37 @@ function flagArtistYearOutliers(db: DatabaseType.Database): void {
         update.run(JSON.stringify([...flags]), now, song.id);
       }
     }
+  }
+}
+
+export async function healCorruptedArt(db: DatabaseType.Database): Promise<void> {
+  const songs = db.prepare("SELECT id, art_path FROM songs WHERE art_path IS NOT NULL").all() as Array<{ id: string; art_path: string }>;
+  const dataDir = path.resolve(import.meta.dirname, "../../data");
+  
+  const update = db.prepare("UPDATE songs SET art_path = NULL, updated_at = ? WHERE id = ?");
+  const now = Date.now();
+  
+  let cleanedCount = 0;
+  for (const song of songs) {
+    const fullPath = path.join(dataDir, song.art_path);
+    let isValid = false;
+    try {
+      const buffer = await readFile(fullPath);
+      if (isValidImageSignature(buffer)) {
+        isValid = true;
+      } else {
+        await unlink(fullPath).catch(() => {});
+      }
+    } catch (err) {
+      // File missing or unreadable is also invalid
+    }
+    
+    if (!isValid) {
+      update.run(now, song.id);
+      cleanedCount++;
+    }
+  }
+  if (cleanedCount > 0) {
+    logger.info({ cleanedCount }, "Cleaned up corrupted cover art files");
   }
 }

@@ -53,7 +53,7 @@ export class VoiceGeneratorService {
   }
 
   async generateClip(characterName: string, text: string, cacheKey: string): Promise<GeneratedVoiceClip> {
-    return gpuLock.enqueue(`voice:${characterName}`, () => this.generateClipNow(characterName, text, cacheKey), 1200);
+    return gpuLock.enqueue("voice-api-global", () => this.generateClipNow(characterName, text, cacheKey), 1200);
   }
 
   private async generateClipNow(characterName: string, text: string, cacheKey: string): Promise<GeneratedVoiceClip> {

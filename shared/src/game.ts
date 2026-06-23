@@ -79,6 +79,8 @@ export interface GameView {
   remaining: number;
   /** ms-epoch; non-null during the pre-game countdown so hubs/players can show a timer. */
   countdownEndsAt: number | null;
+  /** True when the intro narration duration is estimated and numeric countdown matches it. */
+  countdownReady: boolean;
   /** True while the server is generating an outcome-aware emcee/showcase line. */
   commentaryPending: boolean;
 }

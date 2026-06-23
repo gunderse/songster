@@ -5,7 +5,9 @@ import type {
   SongListQuery,
   SongUpdate,
   YearSuggestion,
+  SongStatus,
 } from "@songster/shared/library";
+import type { ShowcaseView } from "@songster/shared/game";
 
 async function http<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -28,15 +30,22 @@ export function fetchStats(): Promise<LibraryStats> {
   return http<LibraryStats>("/api/library/stats");
 }
 
-export function fetchSongs(query: Partial<SongListQuery>): Promise<LibrarySong[]> {
+export function fetchSongs(query: Partial<SongListQuery> & { missingYear?: boolean }, signal?: AbortSignal): Promise<LibrarySong[]> {
   const params = new URLSearchParams();
   if (query.status) params.set("status", query.status);
   if (query.flaggedOnly) params.set("flaggedOnly", "true");
+  if (query.missingYear) params.set("missingYear", "true");
   if (query.search) params.set("search", query.search);
+  if (query.searchTitle) params.set("searchTitle", query.searchTitle);
+  if (query.searchArtist) params.set("searchArtist", query.searchArtist);
+  if (query.searchAlbum) params.set("searchAlbum", query.searchAlbum);
+  if (query.yearStart !== undefined) params.set("yearStart", String(query.yearStart));
+  if (query.yearEnd !== undefined) params.set("yearEnd", String(query.yearEnd));
   if (query.genre) params.set("genre", query.genre);
   if (query.tag) params.set("tag", query.tag);
   if (query.sort) params.set("sort", query.sort);
-  return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`).then((r) => r.songs);
+  if (query.source) params.set("source", query.source);
+  return http<{ songs: LibrarySong[] }>(`/api/library/songs?${params.toString()}`, { signal }).then((r) => r.songs);
 }
 
 export function fetchFacets(): Promise<LibraryFacets> {
@@ -74,6 +83,7 @@ export interface ScanSummary {
   updated: number;
   flagged: number;
   errors: number;
+  plexError?: string;
 }
 
 export function rescanLibrary(): Promise<ScanSummary> {
@@ -98,4 +108,230 @@ export function audioStreamUrl(id: string): string {
 
 export function artUrl(id: string): string {
   return `/audio/${id}/art`;
+}
+
+export interface PlexSettings {
+  url: string;
+  libraryName: string;
+  hasToken: boolean;
+}
+
+export function fetchPlexSettings(): Promise<PlexSettings> {
+  return http<PlexSettings>("/api/library/settings/plex");
+}
+
+export function savePlexSettings(url: string, libraryName: string): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/library/settings/plex", {
+    method: "POST",
+    body: JSON.stringify({ url, libraryName }),
+  });
+}
+
+export interface PlexTestResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+export function testPlexSettings(url: string, libraryName: string): Promise<PlexTestResult> {
+  return http<PlexTestResult>("/api/library/settings/plex/test", {
+    method: "POST",
+    body: JSON.stringify({ url, libraryName }),
+  });
+}
+
+export function requestPlexPin(): Promise<{ pinId: number; code: string }> {
+  return http<{ pinId: number; code: string }>("/api/library/settings/plex/auth/pin", {
+    method: "POST",
+  });
+}
+
+export function checkPlexAuth(pinId: number): Promise<{ ok: boolean; connected: boolean }> {
+  return http<{ ok: boolean; connected: boolean }>(`/api/library/settings/plex/auth/check/${pinId}`);
+}
+
+export interface PlexSearchResult {
+  totalSize: number;
+  results: Array<{
+    ratingKey: string;
+    key: string;
+    title: string;
+    artist: string | null;
+    album: string | null;
+    year: number | null;
+    durationS: number | null;
+    thumb: string | null;
+    isImported: boolean;
+    songId: string | null;
+    status: SongStatus | null;
+  }>;
+}
+
+export interface PlexSearchQuery {
+  search?: string;
+  searchTitle?: string;
+  searchArtist?: string;
+  searchAlbum?: string;
+  yearStart?: number;
+  yearEnd?: number;
+  missingYear?: boolean;
+  sort?: string;
+  start: number;
+  size: number;
+}
+
+export function searchPlex(query: PlexSearchQuery, signal?: AbortSignal): Promise<PlexSearchResult> {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.searchTitle) params.set("searchTitle", query.searchTitle);
+  if (query.searchArtist) params.set("searchArtist", query.searchArtist);
+  if (query.searchAlbum) params.set("searchAlbum", query.searchAlbum);
+  if (query.yearStart !== undefined) params.set("yearStart", String(query.yearStart));
+  if (query.yearEnd !== undefined) params.set("yearEnd", String(query.yearEnd));
+  if (query.missingYear) params.set("missingYear", "true");
+  if (query.sort) params.set("sort", query.sort);
+  params.set("start", String(query.start));
+  params.set("size", String(query.size));
+  return http<PlexSearchResult>(`/api/library/plex/search?${params.toString()}`, { signal });
+}
+
+export interface PlexImportOverrides {
+  title?: string;
+  artist?: string;
+  album?: string;
+  year?: number | null;
+  genres?: string[];
+  tags?: string[];
+  artUrl?: string;
+  snippetStartS?: number | null;
+}
+
+export function importPlex(
+  ratingKey: string,
+  status: "approved" | "unreviewed" | "excluded",
+  overrides?: PlexImportOverrides
+): Promise<{ success: boolean; songId: string; title: string; artist: string | null }> {
+  return http<{ success: boolean; songId: string; title: string; artist: string | null }>("/api/library/plex/import", {
+    method: "POST",
+    body: JSON.stringify({ ratingKey, status, ...overrides }),
+  });
+}
+
+export function deleteSong(id: string): Promise<{ success: boolean; id: string }> {
+  return http<{ success: boolean; id: string }>(`/api/library/songs/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function plexArtUrl(thumb: string): string {
+  return `/api/library/plex/art?thumb=${encodeURIComponent(thumb)}`;
+}
+
+export interface WebMetadataResult {
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  year: number | null;
+  artUrl: string | null;
+  genre: string | null;
+}
+
+export function lookupWeb(title: string, artist: string): Promise<WebMetadataResult[]> {
+  const params = new URLSearchParams();
+  params.set("title", title);
+  params.set("artist", artist);
+  return http<{ results: WebMetadataResult[] }>(`/api/library/lookup-web?${params.toString()}`).then((r) => r.results);
+}
+
+export function importWebArt(id: string, artUrl: string): Promise<LibrarySong> {
+  return http<{ song: LibrarySong }>(`/api/library/songs/${id}/import-web-art`, {
+    method: "POST",
+    body: JSON.stringify({ artUrl }),
+  }).then((r) => r.song);
+}
+
+// ── Admin / Benchmark ────────────────────────────────────────────────────────
+
+export interface AdminHealthResult {
+  ollama: { ok: boolean; models: string[]; url: string; error?: string };
+  voice: { ok: boolean; characters: number; url: string; error?: string };
+  defaultModel: string;
+}
+
+export interface BenchmarkPhase {
+  ok: boolean;
+  latencyMs?: number;
+  text?: string;
+  fallbackText?: string;
+  audioUrl?: string;
+  durationMs?: number;
+  models?: string[];
+  characters?: number;
+  error?: string;
+  warning?: string;
+}
+
+export interface BenchmarkResults {
+  ok: boolean;
+  model: string;
+  think: boolean;
+  results: {
+    ollamaHealth?: BenchmarkPhase;
+    voiceHealth?: BenchmarkPhase;
+    ollamaWinNarration?: BenchmarkPhase;
+    ollamaLoseNarration?: BenchmarkPhase;
+    voiceGeneration?: BenchmarkPhase;
+    totalE2eMs?: number;
+  };
+  error?: string;
+}
+
+export function fetchAdminHealth(): Promise<AdminHealthResult> {
+  return http<AdminHealthResult>("/api/admin/health");
+}
+
+export function runAdminBenchmark(options: { model: string; think: boolean }): Promise<BenchmarkResults> {
+  return http<BenchmarkResults>("/api/admin/benchmark", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export interface ShowcaseSmoketestResult {
+  ok: boolean;
+  showcase: ShowcaseView | null;
+  error?: string;
+  latencyMs?: number;
+}
+
+export function runShowcaseSmoketest(options: { model: string; think: boolean }): Promise<ShowcaseSmoketestResult> {
+  return http<ShowcaseSmoketestResult>("/api/admin/showcase-smoketest", {
+    method: "POST",
+    body: JSON.stringify(options),
+  });
+}
+
+export interface ActiveRoom {
+  code: string;
+  status: string;
+  playerCount: number;
+  teamCount: number;
+  createdAt: number;
+}
+
+export function fetchActiveRooms(): Promise<{ rooms: ActiveRoom[] }> {
+  return http<{ rooms: ActiveRoom[] }>("/api/admin/rooms");
+}
+
+export function destroyRoom(code: string): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/admin/rooms/destroy", {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function destroyAllRooms(): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/admin/rooms/destroy-all", {
+    method: "POST",
+  });
 }

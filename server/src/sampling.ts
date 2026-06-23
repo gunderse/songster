@@ -25,7 +25,7 @@ interface SongSampleRow {
 }
 
 function defaultStart(duration: number | null): number {
-  if (duration === null || duration <= 0) return 0;
+  if (duration === null || duration <= 0) return 30;
   return Math.round(Math.min(30, duration * 0.25));
 }
 
@@ -42,9 +42,15 @@ function toSampled(row: SongSampleRow): SampledSong {
   };
 }
 
-function buildFilter(deck: DeckFilter, exclude: string[]): { clause: string; params: Record<string, string> } {
+function buildFilter(deck: DeckFilter, musicSource: "local" | "plex" | "all", exclude: string[]): { clause: string; params: Record<string, string> } {
   const where = ["status = 'approved'", "year IS NOT NULL"];
   const params: Record<string, string> = {};
+
+  if (musicSource === "local") {
+    where.push("file_path NOT LIKE 'plex://%'");
+  } else if (musicSource === "plex") {
+    where.push("file_path LIKE 'plex://%'");
+  }
 
   if (deck.genres !== undefined && deck.genres.length > 0) {
     const keys = deck.genres.map((_, i) => `@g${i}`);
@@ -65,8 +71,8 @@ function buildFilter(deck: DeckFilter, exclude: string[]): { clause: string; par
   return { clause: where.join(" AND "), params };
 }
 
-export function sampleSongs(db: DatabaseType.Database, deck: DeckFilter, count: number, exclude: string[]): SampledSong[] {
-  const { clause, params } = buildFilter(deck, exclude);
+export function sampleSongs(db: DatabaseType.Database, deck: DeckFilter, musicSource: "local" | "plex" | "all", count: number, exclude: string[]): SampledSong[] {
+  const { clause, params } = buildFilter(deck, musicSource, exclude);
   const rows = db
     .prepare(
       `SELECT id, year, title, artist, (art_path IS NOT NULL) AS has_art, snippet_start_s, snippet_len_s, duration_s
@@ -76,11 +82,11 @@ export function sampleSongs(db: DatabaseType.Database, deck: DeckFilter, count: 
   return rows.map(toSampled);
 }
 
-export function sampleOne(db: DatabaseType.Database, deck: DeckFilter, exclude: string[]): SampledSong | null {
-  return sampleSongs(db, deck, 1, exclude)[0] ?? null;
+export function sampleOne(db: DatabaseType.Database, deck: DeckFilter, musicSource: "local" | "plex" | "all", exclude: string[]): SampledSong | null {
+  return sampleSongs(db, deck, musicSource, 1, exclude)[0] ?? null;
 }
 
-export function countAvailable(db: DatabaseType.Database, deck: DeckFilter, exclude: string[]): number {
-  const { clause, params } = buildFilter(deck, exclude);
+export function countAvailable(db: DatabaseType.Database, deck: DeckFilter, musicSource: "local" | "plex" | "all", exclude: string[]): number {
+  const { clause, params } = buildFilter(deck, musicSource, exclude);
   return (db.prepare(`SELECT COUNT(*) AS c FROM songs WHERE ${clause}`).get(params) as { c: number }).c;
 }
