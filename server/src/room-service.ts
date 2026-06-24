@@ -646,8 +646,32 @@ export class RoomManager {
           teamForCorrect.timeline = originalTimeline;
         }
 
-        const correctContext = this.buildEmceeContext(room, game, true, correctLeadChanged, nextPlayerName);
-        const wrongContext = this.buildEmceeContext(room, game, false, false, nextPlayerName);
+        const activeTeamId = game.active!.teamId;
+        const currentStreak = teamForCorrect ? teamForCorrect.streak : 0;
+
+        const correctScoreOffsets = new Map<string, number>([[activeTeamId, 1]]);
+        const correctStreakOffsets = new Map<string, number>([[activeTeamId, 1]]);
+        const wrongScoreOffsets = new Map<string, number>([[activeTeamId, 0]]);
+        const wrongStreakOffsets = new Map<string, number>([[activeTeamId, -currentStreak]]);
+
+        const correctContext = this.buildEmceeContext(
+          room,
+          game,
+          true,
+          correctLeadChanged,
+          nextPlayerName,
+          correctScoreOffsets,
+          correctStreakOffsets
+        );
+        const wrongContext = this.buildEmceeContext(
+          room,
+          game,
+          false,
+          false,
+          nextPlayerName,
+          wrongScoreOffsets,
+          wrongStreakOffsets
+        );
 
         if (game.active && game.active.song.songId === song.songId) {
           game.active.preGeneratedCorrectPromise = emceeService.generateText(hostName, correctContext);
@@ -951,7 +975,9 @@ export class RoomManager {
     game: Game,
     correct: boolean,
     leadChanged: boolean,
-    nextPlayerName: string | null
+    nextPlayerName: string | null,
+    scoreOffsetMap?: Map<string, number>,
+    streakOffsetMap?: Map<string, number>
   ): EmceeContext {
     const active = game.active!;
     const team = game.teams.find((t) => t.teamId === active.teamId);
@@ -970,15 +996,16 @@ export class RoomManager {
     }
 
     let streakInfo = null;
-    if (correct && team && team.streak >= 2) {
-      streakInfo = { streakCount: team.streak };
+    const currentStreak = team ? team.streak + (streakOffsetMap?.get(team.teamId) ?? 0) : 0;
+    if (correct && team && currentStreak >= 2) {
+      streakInfo = { streakCount: currentStreak };
     }
 
     return {
       song: { title: active.song.title, artist: active.song.artist, year: active.song.year },
       teamName: room.teams.find((t) => t.id === active.teamId)?.name ?? "the team",
       placerName: room.players.get(active.placerId)?.name ?? "someone",
-      situation: this.describeSituation(room, game),
+      situation: this.describeSituation(room, game, scoreOffsetMap, streakOffsetMap),
       outcome: correct ? "correct" : "wrong",
       steal: stealInfo,
       leadChange: leadChangeInfo,
@@ -988,13 +1015,22 @@ export class RoomManager {
   }
 
   /** A short, spoiler-free summary of the standings for the emcee to riff on. */
-  private describeSituation(room: Room, game: Game): string {
-    const standings = game.teams.map((t) => ({
-      name: room.teams.find((rt) => rt.id === t.teamId)?.name ?? "?",
-      count: scoreOf(t.timeline),
-      streak: t.streak,
-      teamId: t.teamId,
-    }));
+  private describeSituation(
+    room: Room,
+    game: Game,
+    scoreOffsetMap?: Map<string, number>,
+    streakOffsetMap?: Map<string, number>
+  ): string {
+    const standings = game.teams.map((t) => {
+      const scoreOffset = scoreOffsetMap?.get(t.teamId) ?? 0;
+      const streakOffset = streakOffsetMap?.get(t.teamId) ?? 0;
+      return {
+        name: room.teams.find((rt) => rt.id === t.teamId)?.name ?? "?",
+        count: scoreOf(t.timeline) + scoreOffset,
+        streak: Math.max(0, t.streak + streakOffset),
+        teamId: t.teamId,
+      };
+    });
     const sorted = [...standings].sort((a, b) => b.count - a.count);
     const top = sorted[0]!;
     const bottom = sorted[sorted.length - 1]!;
@@ -1254,8 +1290,32 @@ export class RoomManager {
           teamForCorrect.timeline = originalTimeline;
         }
 
-        const correctContext = this.buildEmceeContext(room, game, true, correctLeadChanged, nextPlayerName);
-        const wrongContext = this.buildEmceeContext(room, game, false, false, nextPlayerName);
+        const activeTeamId = game.active!.teamId;
+        const currentStreak = teamForCorrect ? teamForCorrect.streak : 0;
+
+        const correctScoreOffsets = new Map<string, number>([[activeTeamId, 1]]);
+        const correctStreakOffsets = new Map<string, number>([[activeTeamId, 1]]);
+        const wrongScoreOffsets = new Map<string, number>([[activeTeamId, 0]]);
+        const wrongStreakOffsets = new Map<string, number>([[activeTeamId, -currentStreak]]);
+
+        const correctContext = this.buildEmceeContext(
+          room,
+          game,
+          true,
+          correctLeadChanged,
+          nextPlayerName,
+          correctScoreOffsets,
+          correctStreakOffsets
+        );
+        const wrongContext = this.buildEmceeContext(
+          room,
+          game,
+          false,
+          false,
+          nextPlayerName,
+          wrongScoreOffsets,
+          wrongStreakOffsets
+        );
 
         if (game.active && game.active.song.songId === song.songId) {
           game.active.preGeneratedCorrectPromise = emceeService.generateText(hostName, correctContext);

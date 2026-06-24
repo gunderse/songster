@@ -182,7 +182,8 @@ export class EmceeService {
     }
 
     instructions.push(
-      `Keep the introduction energetic and clear, around 80-120 words. Output ONLY the spoken line — no quotes, markdown, or stage directions.`
+      `Keep the introduction energetic and clear, around 80-120 words. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'Welcome to [emphasis]Songster!'). Use this tag selectively on key words to make your delivery sound dynamic.`
     );
 
     const prompt = instructions.join("\n");
@@ -232,7 +233,8 @@ export class EmceeService {
 
     instructions.push(
       situation.length > 0 ? `Optional cheeky jab if it fits in a few words: ${situation}` : "",
-      `Keep it TIGHT and punchy: UNDER 38 words total. Start with the right/wrong reaction, state the year, and end by mentioning the next player ${nextPlayerName ? `(${nextPlayerName})` : ""}. Output ONLY the spoken line — no quotes, markdown, or stage directions.`
+      `Keep it TIGHT and punchy: UNDER 38 words total. Start with the right/wrong reaction, state the year, and end by mentioning the next player ${nextPlayerName ? `(${nextPlayerName})` : ""}. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'That was [emphasis]correct!'). Use this tag selectively on key words to make your delivery sound dynamic.`
     );
 
     const prompt = instructions.filter((line) => line.length > 0).join("\n");

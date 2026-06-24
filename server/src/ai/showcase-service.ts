@@ -229,6 +229,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
       `Incorporate specific mentions of players, highlight key turn outcomes (e.g. replays of specific correct answers or epic steals), and make it feel like a grand finale presentation with high energy.`,
       `Since this is a grand finale, write 4-6 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
       `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
+      `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!').`,
       'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
       `Speakers: "host" (${cast.host ?? theme.roles.host})${
         theme.roles.cohost !== null
@@ -247,6 +248,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
     context.situation.length > 0 ? `Game state: ${context.situation}` : "",
     context.nextPlayerName ? `End the segment by handing off to the next player, ${context.nextPlayerName}.` : "",
+    `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'That was a [emphasis]steal!').`,
     'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
     `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})` : ' only — use "host" for every cue'}.`,
     "2-3 cues total. Each cue ONE short sentence under 24 words, fully in character. Mention the year if a song is given. No markdown, no stage directions.",
