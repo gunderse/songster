@@ -72,6 +72,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     const cleanPlexUrl = url.trim().replace(/\/+$/, "");
 
     try {
+      logger.info({ url: `${cleanPlexUrl}/library/sections` }, "API Call to Plex: Testing connection (library sections)");
       const response = await fetch(`${cleanPlexUrl}/library/sections`, {
         headers: {
           "Accept": "application/json",
@@ -103,6 +104,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       }
 
       // Found the library. Let's get the track count if possible
+      logger.info({ url: `${cleanPlexUrl}/library/sections/${section.key}/all` }, "API Call to Plex: Testing connection (track count)");
       const tracksResponse = await fetch(`${cleanPlexUrl}/library/sections/${section.key}/all?type=10&X-Plex-Token=${token}`, {
         headers: {
           "Accept": "application/json",
@@ -312,7 +314,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       if (!cachedPlexTracks) {
         if (!plexFetchPromise) {
           plexFetchPromise = (async () => {
-            logger.info("Plex cache empty. Fetching library sections...");
+            logger.info({ url: `${cleanPlexUrl}/library/sections` }, "API Call to Plex: Fetching library sections for search cache");
             const sectionsResponse = await fetch(`${cleanPlexUrl}/library/sections?X-Plex-Token=${token}`, {
               headers: { "Accept": "application/json" }
             });
@@ -328,8 +330,8 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
             }
             const sectionId = section.key;
 
-            logger.info(`Fetching all tracks from Plex section ${sectionId}...`);
             const plexUrlString = `${cleanPlexUrl}/library/sections/${sectionId}/all?type=10&X-Plex-Token=${token}`;
+            logger.info({ url: plexUrlString }, "API Call to Plex: Fetching all tracks for search cache");
             const tracksResponse = await fetch(plexUrlString, {
               headers: { "Accept": "application/json" }
             });
@@ -502,8 +504,15 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       headers["Range"] = req.headers.range;
     }
 
+    logger.info({ url: targetUrl }, "API Call to Plex: Previewing audio");
+
+    const controller = new AbortController();
+    req.on("close", () => {
+      controller.abort();
+    });
+
     try {
-      const streamResponse = await fetch(targetUrl, { headers });
+      const streamResponse = await fetch(targetUrl, { headers, signal: controller.signal });
       res.status(streamResponse.status);
 
       for (const [name, val] of streamResponse.headers.entries()) {
@@ -515,11 +524,22 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
 
       if (streamResponse.body) {
         const { Readable } = await import("node:stream");
-        Readable.fromWeb(streamResponse.body as any).pipe(res);
+        const readable = Readable.fromWeb(streamResponse.body as any);
+        readable.on("error", (err: any) => {
+          if (err.name === "AbortError" || err.code === "ERR_STREAM_PREMATURE_CLOSE") {
+            return;
+          }
+          logger.warn({ key, error: err.message }, "Plex preview readable stream error");
+        });
+        readable.pipe(res);
       } else {
         res.end();
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        logger.info({ key }, "Plex preview streaming aborted by client close");
+        return;
+      }
       logger.error({ key, error: (error as Error).message }, "Failed to stream Plex preview audio");
       if (!res.headersSent) {
         res.sendStatus(500);
@@ -546,6 +566,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
 
       const cleanPlexUrl = url.trim().replace(/\/+$/, "");
 
+      logger.info({ url: `${cleanPlexUrl}/library/metadata/${ratingKey}` }, "API Call to Plex: Fetching track metadata for import");
       const metadataResponse = await fetch(`${cleanPlexUrl}/library/metadata/${ratingKey}?X-Plex-Token=${token}`, {
         headers: { "Accept": "application/json" }
       });
@@ -598,6 +619,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       const customArtUrl = req.body.artUrl;
       if (typeof customArtUrl === "string" && customArtUrl.length > 0) {
         try {
+          logger.info({ url: customArtUrl }, "API Call to iTunes/Web: Downloading custom art during import");
           const artResponse = await fetch(customArtUrl);
           if (artResponse.ok) {
             const buffer = await artResponse.arrayBuffer();
@@ -620,6 +642,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
         const thumb = track.thumb || track.parentThumb || track.grandparentThumb;
         if (thumb) {
           try {
+            logger.info({ url: `${cleanPlexUrl}${thumb}` }, "API Call to Plex: Downloading track art during import");
             const artResponse = await fetch(`${cleanPlexUrl}${thumb}?X-Plex-Token=${token}`);
             if (artResponse.ok) {
               const buffer = await artResponse.arrayBuffer();
@@ -719,8 +742,15 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
     const cleanPlexUrl = url.trim().replace(/\/+$/, "");
     const targetUrl = `${cleanPlexUrl}${thumb}?X-Plex-Token=${token}`;
 
+    logger.info({ url: targetUrl }, "API Call to Plex: Proxying cover art");
+
+    const controller = new AbortController();
+    req.on("close", () => {
+      controller.abort();
+    });
+
     try {
-      const artResponse = await fetch(targetUrl);
+      const artResponse = await fetch(targetUrl, { signal: controller.signal });
       if (!artResponse.ok) {
         res.sendStatus(artResponse.status);
         return;
@@ -736,7 +766,10 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       } else {
         res.status(404).end();
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        return;
+      }
       logger.error({ thumb, error: (error as Error).message }, "Failed to proxy Plex art");
       if (!res.headersSent) {
         res.sendStatus(500);
@@ -773,6 +806,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
   async function lookupWebMetadata(title: string, artist: string): Promise<any[]> {
     const term = `${artist} ${title}`.trim();
     const url = `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=music&entity=song&limit=5`;
+    logger.info({ url }, "API Call to iTunes Search API: lookupWebMetadata");
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`iTunes search failed: status ${response.status}`);
@@ -793,6 +827,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
         year,
         artUrl,
         genre: item.primaryGenreName || null,
+        genres: Array.isArray(item.genres) ? item.genres : (item.primaryGenreName ? [item.primaryGenreName] : []),
       };
     });
   }
@@ -854,6 +889,7 @@ export function createLibraryRouter(db: DatabaseType.Database): Router {
       return;
     }
     try {
+      logger.info({ url: artUrl }, "API Call to iTunes/Web: Importing art");
       const artResponse = await fetch(artUrl);
       if (!artResponse.ok) {
         throw new Error(`Failed to fetch image from web: status ${artResponse.status}`);

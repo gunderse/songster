@@ -284,7 +284,7 @@ export function Library() {
       audio.src = audioStreamUrl(song.id);
       audio.load();
       setPreviewingId(song.id);
-      const lengthMs = (song.snippetLenS ?? 15) * 1000;
+      const lengthMs = (song.snippetLenS ?? 30) * 1000;
       audio.onloadedmetadata = () => {
         try {
           audio.currentTime = pendingStart.current;
@@ -311,7 +311,7 @@ export function Library() {
       audio.src = `/api/library/plex/preview?key=${encodeURIComponent(track.key)}`;
       audio.load();
       setPreviewingPlexKey(track.key);
-      const lengthMs = 15 * 1000;
+      const lengthMs = 30 * 1000;
       audio.onloadedmetadata = () => {
         try {
           audio.currentTime = pendingStart.current;
@@ -1579,7 +1579,8 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
 
   useEffect(() => {
     void executeLookup(title, artist);
-  }, [executeLookup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1625,12 +1626,17 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
       if (checked.has("artist") && result.artist) patch.artist = result.artist;
       if (checked.has("album") && result.album) patch.album = result.album;
       if (checked.has("year") && result.year !== null) patch.year = result.year;
-      if (checked.has("genre") && result.genre) {
-        // Add genre as a tag (avoid duplicates)
-        const genreTag = result.genre;
+      if (checked.has("genre")) {
+        const genreTags = result.genres && result.genres.length > 0 ? result.genres : (result.genre ? [result.genre] : []);
         const existingTags = updated.tags || [];
-        if (!existingTags.includes(genreTag)) {
-          patch.tags = [...existingTags, genreTag];
+        const newTags = [...existingTags];
+        for (const g of genreTags) {
+          if (!newTags.includes(g)) {
+            newTags.push(g);
+          }
+        }
+        if (newTags.length > existingTags.length) {
+          patch.tags = newTags;
         }
       }
       if (Object.keys(patch).length > 0) {
@@ -1663,12 +1669,16 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
       if (result.artist) patch.artist = result.artist;
       if (result.album) patch.album = result.album;
       if (result.year !== null) patch.year = result.year;
-      if (result.genre) {
-        const genreTag = result.genre;
-        const existingTags = updated.tags || [];
-        if (!existingTags.includes(genreTag)) {
-          patch.tags = [...existingTags, genreTag];
+      const genreTags = result.genres && result.genres.length > 0 ? result.genres : (result.genre ? [result.genre] : []);
+      const existingTags = updated.tags || [];
+      const newTags = [...existingTags];
+      for (const g of genreTags) {
+        if (!newTags.includes(g)) {
+          newTags.push(g);
         }
+      }
+      if (newTags.length > existingTags.length) {
+        patch.tags = newTags;
       }
       if (Object.keys(patch).length > 0) {
         updated = await patchSong(song.id, patch);
@@ -1690,7 +1700,7 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
       case "artist": return result.artist ?? "—";
       case "album": return result.album ?? "—";
       case "year": return result.year?.toString() ?? "—";
-      case "genre": return result.genre ?? "—";
+      case "genre": return result.genres && result.genres.length > 0 ? result.genres.join(", ") : (result.genre ?? "—");
       case "art": return "Cover art";
     }
   };
@@ -1712,7 +1722,11 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
       case "artist": return !!result.artist && result.artist !== song.artist;
       case "album": return !!result.album && result.album !== song.album;
       case "year": return result.year !== null && result.year !== song.year;
-      case "genre": return !!result.genre && !song.tags.includes(result.genre);
+      case "genre":
+        if (result.genres && result.genres.length > 0) {
+          return result.genres.some((g) => !song.tags.includes(g));
+        }
+        return !!result.genre && !song.tags.includes(result.genre);
       case "art": return !!result.artUrl;
     }
   };
@@ -1872,11 +1886,17 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
                           {result.year}
                         </span>
                       )}
-                      {result.genre && (
+                      {result.genres && result.genres.length > 0 ? (
+                        result.genres.map((g) => (
+                          <span key={g} className="rounded bg-teal-900/40 border border-teal-700/30 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
+                            {g}
+                          </span>
+                        ))
+                      ) : result.genre ? (
                         <span className="rounded bg-teal-900/40 border border-teal-700/30 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
                           {result.genre}
                         </span>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Per-field checkboxes */}
@@ -1981,6 +2001,17 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [selections, setSelections] = useState<Map<number, Set<LookupField>>>(new Map());
 
+  const artistRef = useRef(artist);
+  artistRef.current = artist;
+  const albumRef = useRef(album);
+  albumRef.current = album;
+  const yearRef = useRef(year);
+  yearRef.current = year;
+  const selectedArtUrlRef = useRef(selectedArtUrl);
+  selectedArtUrlRef.current = selectedArtUrl;
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
+
   const executeLookup = useCallback(async (qTitle: string, qArtist: string) => {
     setLookupLoading(true);
     setLookupError(null);
@@ -1991,11 +2022,11 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
       const initSelections = new Map<number, Set<LookupField>>();
       data.forEach((result, idx) => {
         const checked = new Set<LookupField>();
-        if (!artist && result.artist) checked.add("artist");
-        if (!album && result.album) checked.add("album");
-        if (!year && result.year !== null) checked.add("year");
-        if (!track.thumb && !selectedArtUrl && result.artUrl) checked.add("art");
-        if (tags.length === 0 && result.genre) checked.add("genre");
+        if (!artistRef.current && result.artist) checked.add("artist");
+        if (!albumRef.current && result.album) checked.add("album");
+        if (!yearRef.current && result.year !== null) checked.add("year");
+        if (!track.thumb && !selectedArtUrlRef.current && result.artUrl) checked.add("art");
+        if (tagsRef.current.length === 0 && result.genre) checked.add("genre");
         initSelections.set(idx, checked);
       });
       setSelections(initSelections);
@@ -2004,11 +2035,12 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
     } finally {
       setLookupLoading(false);
     }
-  }, [artist, album, year, track.thumb, selectedArtUrl, tags.length]);
+  }, [track.thumb]);
 
   useEffect(() => {
     void executeLookup(searchTitle, searchArtist);
-  }, [executeLookup]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2050,10 +2082,17 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
     if (checked.has("artist") && result.artist) setArtist(result.artist);
     if (checked.has("album") && result.album) setAlbum(result.album);
     if (checked.has("year") && result.year !== null) setYear(String(result.year));
-    if (checked.has("genre") && result.genre) {
-      if (!tags.includes(result.genre)) {
-        setTags((prev) => [...prev, result.genre!]);
-      }
+    if (checked.has("genre")) {
+      const genreTags = result.genres && result.genres.length > 0 ? result.genres : (result.genre ? [result.genre] : []);
+      setTags((prev) => {
+        const next = [...prev];
+        for (const g of genreTags) {
+          if (!next.includes(g)) {
+            next.push(g);
+          }
+        }
+        return next;
+      });
     }
     if (checked.has("art") && result.artUrl) {
       setSelectedArtUrl(result.artUrl);
@@ -2072,11 +2111,16 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
     if (result.artist) setArtist(result.artist);
     if (result.album) setAlbum(result.album);
     if (result.year !== null) setYear(String(result.year));
-    if (result.genre) {
-      if (!tags.includes(result.genre)) {
-        setTags((prev) => [...prev, result.genre!]);
+    const genreTags = result.genres && result.genres.length > 0 ? result.genres : (result.genre ? [result.genre] : []);
+    setTags((prev) => {
+      const next = [...prev];
+      for (const g of genreTags) {
+        if (!next.includes(g)) {
+          next.push(g);
+        }
       }
-    }
+      return next;
+    });
     if (result.artUrl) {
       setSelectedArtUrl(result.artUrl);
     }
@@ -2357,7 +2401,12 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
                   if (result.year !== null && String(result.year) !== year.trim()) {
                     diffFields.push({ field: "year", label: "Year", value: String(result.year), isMissing: !year.trim() });
                   }
-                  if (result.genre && !tags.includes(result.genre)) {
+                  if (result.genres && result.genres.length > 0) {
+                    const missingGenres = result.genres.filter(g => !tags.includes(g));
+                    if (missingGenres.length > 0) {
+                      diffFields.push({ field: "genre", label: "Tag", value: result.genres.join(", "), isMissing: tags.length === 0 });
+                    }
+                  } else if (result.genre && !tags.includes(result.genre)) {
                     diffFields.push({ field: "genre", label: "Tag", value: result.genre, isMissing: tags.length === 0 });
                   }
                   if (result.artUrl && result.artUrl !== selectedArtUrl) {
@@ -2383,9 +2432,13 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
                           {result.year && (
                             <span className="rounded bg-slate-800 px-1 py-0.25 text-[9px] font-bold text-indigo-300">{result.year}</span>
                           )}
-                          {result.genre && (
+                          {result.genres && result.genres.length > 0 ? (
+                            result.genres.map((g) => (
+                              <span key={g} className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{g}</span>
+                            ))
+                          ) : result.genre ? (
                             <span className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{result.genre}</span>
-                          )}
+                          ) : null}
                         </div>
 
                         {/* Checkboxes */}

@@ -203,6 +203,10 @@ export function createAdminRouter(manager: RoomManager): Router {
         correct: true,
         steal: null,
         scoreAfter: 1,
+        teamScores: [
+          { teamName: "Red Devils", score: 1 },
+          { teamName: "Blue Angels", score: 0 },
+        ],
       },
       {
         turnId: 1,
@@ -212,6 +216,10 @@ export function createAdminRouter(manager: RoomManager): Router {
         correct: false,
         steal: { stealerName: "Jordan", correct: true },
         scoreAfter: 2,
+        teamScores: [
+          { teamName: "Red Devils", score: 2 },
+          { teamName: "Blue Angels", score: 0 },
+        ],
       },
       {
         turnId: 2,
@@ -221,6 +229,10 @@ export function createAdminRouter(manager: RoomManager): Router {
         correct: true,
         steal: null,
         scoreAfter: 3,
+        teamScores: [
+          { teamName: "Red Devils", score: 3 },
+          { teamName: "Blue Angels", score: 0 },
+        ],
       },
       {
         turnId: 3,
@@ -230,6 +242,10 @@ export function createAdminRouter(manager: RoomManager): Router {
         correct: true,
         steal: null,
         scoreAfter: 1,
+        teamScores: [
+          { teamName: "Red Devils", score: 3 },
+          { teamName: "Blue Angels", score: 1 },
+        ],
       },
       {
         turnId: 4,
@@ -239,6 +255,10 @@ export function createAdminRouter(manager: RoomManager): Router {
         correct: true,
         steal: null,
         scoreAfter: 4,
+        teamScores: [
+          { teamName: "Red Devils", score: 4 },
+          { teamName: "Blue Angels", score: 1 },
+        ],
       },
     ];
 

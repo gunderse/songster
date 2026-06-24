@@ -2,7 +2,7 @@ import { ollamaModel } from "../config.js";
 import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { ollamaService } from "./ollama-service.js";
-import { voiceGeneratorService, type VoiceCharacter } from "./voice-generator-service.js";
+import { voiceGeneratorService, type VoiceCharacter, cleanDialogText, stripEmphasis } from "./voice-generator-service.js";
 
 export interface EmceeSong {
   title: string | null;
@@ -87,17 +87,18 @@ export class EmceeService {
         text = fallbackLine(context);
       }
     }
-    logger.info({ hostName, text }, "emcee line scripted");
+    const cleanedText = cleanDialogText(text);
+    logger.info({ hostName, text: cleanedText }, "emcee line scripted");
 
     // Voice it, with a single retry (the Voice API can blip under load).
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const clip = await voiceGeneratorService.generateClip(
           hostName,
-          text,
+          cleanedText,
           `reveal-${context.outcome}-${context.song.year}-${(context.song.title ?? "song").slice(0, 32)}-${attempt}`,
         );
-        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text, hostName: clip.characterName };
+        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text: stripEmphasis(cleanedText), hostName: clip.characterName };
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), hostName, attempt }, "emcee voice generation failed");
       }
@@ -105,9 +106,10 @@ export class EmceeService {
     // Voice failed but we still have the line — return text-only so the
     // caption shows on the hub. Pace the reveal to roughly how long the
     // line would have taken to read aloud (~2.4 words/sec).
-    const wordCount = text.split(/\s+/u).filter(Boolean).length;
+    const strippedText = stripEmphasis(cleanedText);
+    const wordCount = strippedText.split(/\s+/u).filter(Boolean).length;
     const estDurationMs = Math.max(2200, Math.min(9000, wordCount * 420 + 600));
-    return { audioUrl: null, durationMs: estDurationMs, text, hostName };
+    return { audioUrl: null, durationMs: estDurationMs, text: strippedText, hostName };
   }
 
   async generateIntroClip(
@@ -125,26 +127,28 @@ export class EmceeService {
       logger.warn({ error: getErrorMessage(error) }, "emcee intro script failed; using fallback");
       text = fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
     }
-    logger.info({ hostName, text }, "emcee intro scripted");
+    const cleanedText = cleanDialogText(text);
+    logger.info({ hostName, text: cleanedText }, "emcee intro scripted");
 
     // Voice it, with a single retry
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const clip = await voiceGeneratorService.generateClip(
           hostName,
-          text,
+          cleanedText,
           `intro-${targetSongs}-${teamNames.join("-").slice(0, 32)}-${attempt}`,
         );
-        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text, hostName: clip.characterName };
+        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text: stripEmphasis(cleanedText), hostName: clip.characterName };
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), hostName, attempt }, "emcee intro voice generation failed");
       }
     }
 
     // Voice failed, fallback text-only
-    const wordCount = text.split(/\s+/u).filter(Boolean).length;
+    const strippedText = stripEmphasis(cleanedText);
+    const wordCount = strippedText.split(/\s+/u).filter(Boolean).length;
     const estDurationMs = Math.max(3000, Math.min(12000, wordCount * 420 + 600));
-    return { audioUrl: null, durationMs: estDurationMs, text, hostName };
+    return { audioUrl: null, durationMs: estDurationMs, text: strippedText, hostName };
   }
 
   private async generateIntroText(
@@ -183,7 +187,7 @@ export class EmceeService {
 
     instructions.push(
       `Keep the introduction energetic and clear, around 80-120 words. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
-      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'Welcome to [emphasis]Songster!'). Use this tag selectively on key words to make your delivery sound dynamic.`
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'Welcome to [emphasis]Songster!'). Use this tag selectively on key words to make your delivery sound dynamic. Do NOT use closing tags like '[/emphasis]'.`
     );
 
     const prompt = instructions.join("\n");
@@ -194,7 +198,7 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 2000) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
+    return cleanDialogText(line.length >= 3 ? line.slice(0, 2000) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName));
   }
 
   async generateText(hostName: string, context: EmceeContext): Promise<string> {
@@ -234,7 +238,8 @@ export class EmceeService {
     instructions.push(
       situation.length > 0 ? `Optional cheeky jab if it fits in a few words: ${situation}` : "",
       `Keep it TIGHT and punchy: UNDER 38 words total. Start with the right/wrong reaction, state the year, and end by mentioning the next player ${nextPlayerName ? `(${nextPlayerName})` : ""}. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
-      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'That was [emphasis]correct!'). Use this tag selectively on key words to make your delivery sound dynamic.`
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'That was [emphasis]correct!'). Use this tag selectively on key words to make your delivery sound dynamic. Do NOT use closing tags like '[/emphasis]'.`,
+      `IMPORTANT: The scores listed in the game state/standings ALREADY include/reflect the outcome of this turn. Do NOT add or increment the score further when narrating.`
     );
 
     const prompt = instructions.filter((line) => line.length > 0).join("\n");
@@ -245,7 +250,7 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 350) : fallbackLine(context);
+    return cleanDialogText(line.length >= 3 ? line.slice(0, 350) : fallbackLine(context));
   }
 }
 

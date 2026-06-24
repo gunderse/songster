@@ -6,7 +6,7 @@ import { ollamaModel } from "../config.js";
 import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { ollamaService } from "./ollama-service.js";
-import { voiceGeneratorService, type VoiceCharacter } from "./voice-generator-service.js";
+import { voiceGeneratorService, type VoiceCharacter, cleanDialogText, stripEmphasis } from "./voice-generator-service.js";
 
 export type ShowcaseReason = "steal" | "leadChange" | "milestone" | "finale" | "streak";
 
@@ -26,6 +26,7 @@ export interface ShowcaseContext {
     correct: boolean;
     steal: { stealerName: string; correct: boolean } | null;
     scoreAfter: number;
+    teamScores?: Array<{ teamName: string; score: number }>;
   }>;
   playerMentions?: string[];
   nextPlayerName?: string | null;
@@ -158,16 +159,17 @@ export class ShowcaseService {
     for (const cue of cues) {
       const characterName = cue.speaker === "cohost" && cast.cohost !== null ? cast.cohost : cast.host;
       const speakerLabel = cue.speaker === "cohost" ? (theme.roles.cohost ?? theme.roles.host) : theme.roles.host;
+      const cleanedText = cleanDialogText(cue.text);
       let audioUrl: string | null = null;
-      let durationMs = estimateMs(cue.text);
+      let durationMs = estimateMs(cleanedText);
       try {
-        const clip = await voiceGeneratorService.generateClip(characterName, cue.text, `showcase-${theme.id}-${context.reason}-${cue.speaker}`);
+        const clip = await voiceGeneratorService.generateClip(characterName, cleanedText, `showcase-${theme.id}-${context.reason}-${cue.speaker}`);
         audioUrl = clip.audioUrl;
         durationMs = clip.durationMs;
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), characterName }, "showcase cue voice failed; caption only");
       }
-      voiced.push({ speakerLabel, characterName, text: cue.text, audioUrl, durationMs });
+      voiced.push({ speakerLabel, characterName, text: stripEmphasis(cleanedText), audioUrl, durationMs });
     }
 
     logger.info({ theme: theme.id, reason: context.reason, host: cast.host, cohost: cast.cohost, cues: voiced.length }, "showcase built");
@@ -202,16 +204,18 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
   if (context.reason === "finale") {
     const historyLines = context.gameHistory
       ? context.gameHistory
-          .map(
-            (h) =>
-              `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${
-                h.song.title ?? "Unknown Track"
-              }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${
-                h.steal
-                  ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
-                  : ""
-              }. Score after: ${h.scoreAfter}`,
-          )
+          .map((h) => {
+            const scoresStr = h.teamScores
+              ? h.teamScores.map((ts) => `${ts.teamName}: ${ts.score}`).join(", ")
+              : `Placing team score: ${h.scoreAfter}`;
+            return `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${
+              h.song.title ?? "Unknown Track"
+            }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${
+              h.steal
+                ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
+                : ""
+            }. Scores after turn: ${scoresStr}`;
+          })
           .join("\n")
       : "";
 
@@ -229,7 +233,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
       `Incorporate specific mentions of players, highlight key turn outcomes (e.g. replays of specific correct answers or epic steals), and make it feel like a grand finale presentation with high energy.`,
       `Since this is a grand finale, write 4-6 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
       `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
-      `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!').`,
+      `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!'). Do NOT use closing tags like '[/emphasis]'.`,
       'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
       `Speakers: "host" (${cast.host ?? theme.roles.host})${
         theme.roles.cohost !== null
@@ -248,7 +252,8 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
     context.situation.length > 0 ? `Game state: ${context.situation}` : "",
     context.nextPlayerName ? `End the segment by handing off to the next player, ${context.nextPlayerName}.` : "",
-    `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'That was a [emphasis]steal!').`,
+    `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'That was a [emphasis]steal!'). Do NOT use closing tags like '[/emphasis]'.`,
+    `IMPORTANT: The scores listed in the game state/standings ALREADY include/reflect the outcome of this turn (including any correct placement or steal that just occurred). Do NOT add or increment the score further when narrating.`,
     'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
     `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})` : ' only — use "host" for every cue'}.`,
     "2-3 cues total. Each cue ONE short sentence under 24 words, fully in character. Mention the year if a song is given. No markdown, no stage directions.",
@@ -268,7 +273,10 @@ function parseScript(raw: string): Cue[] {
     if (braced === null) throw new Error(`No JSON in showcase script: ${candidate.slice(0, 160)}`);
     parsed = JSON.parse(braced[0]);
   }
-  return scriptSchema.parse(parsed).cues;
+  return scriptSchema.parse(parsed).cues.map((c) => ({
+    speaker: c.speaker,
+    text: cleanDialogText(c.text),
+  }));
 }
 
 function templateCues(theme: ThemeConfig, context: ShowcaseContext): Cue[] {

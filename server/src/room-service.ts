@@ -129,6 +129,7 @@ interface GameHistoryEntry {
   correct: boolean;
   steal: { stealerName: string; correct: boolean } | null;
   scoreAfter: number;
+  teamScores?: Array<{ teamName: string; score: number }>;
 }
 
 interface Game {
@@ -825,6 +826,10 @@ export class RoomManager {
     if (!game.history) {
       game.history = [];
     }
+    const teamScores = game.teams.map((t) => {
+      const name = room.teams.find((rt) => rt.id === t.teamId)?.name ?? "?";
+      return { teamName: name, score: scoreOf(t.timeline) };
+    });
     game.history.push({
       turnId: game.turnCounter,
       teamName: currentTeamName,
@@ -833,6 +838,7 @@ export class RoomManager {
       correct,
       steal: stealResult ? { stealerName: stealResult.playerName, correct: stealResult.correct } : null,
       scoreAfter: scoreOf(team.timeline),
+      teamScores,
     });
 
     this.hooks.broadcast(room.code);

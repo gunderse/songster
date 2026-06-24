@@ -128,4 +128,18 @@ function getWavDurationMs(buffer: Buffer): number {
   return Math.max(500, Math.round((dataSize / byteRate) * 1000));
 }
 
+export function cleanDialogText(text: string): string {
+  return text
+    .replace(/\[\/emphasis\]/giu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+export function stripEmphasis(text: string): string {
+  return text
+    .replace(/\[\/?emphasis\]/giu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 export const voiceGeneratorService = new VoiceGeneratorService();
