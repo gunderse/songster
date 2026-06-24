@@ -106,7 +106,7 @@ export function Admin() {
           <NumberField label="Win at" value={targetLength} min={3} max={20} onChange={setTargetLength} />
           <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
           <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
-          <NumberField label="Turn timer s (0=off)" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
+          <NumberField label="Turn timer s" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
         </div>
 
         <div className="mt-6">
@@ -123,11 +123,10 @@ export function Admin() {
                   key={value}
                   type="button"
                   onClick={() => setMusicSource(value as any)}
-                  className={`flex-1 min-w-[150px] rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${
-                    active
+                  className={`flex-1 min-w-[150px] rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${active
                       ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20"
                       : "bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200"
-                  }`}
+                    }`}
                 >
                   {label}
                 </button>
@@ -150,11 +149,10 @@ export function Admin() {
                   key={label as string}
                   type="button"
                   onClick={() => (onChange as any)(!value)}
-                  className={`rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${
-                    active
+                  className={`rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${active
                       ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20"
                       : "bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200"
-                  }`}
+                    }`}
                 >
                   {active ? "✓ " : "+ "} {label as string}
                 </button>
@@ -206,11 +204,10 @@ export function Admin() {
                 <div key={r.code} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-4 hover:border-slate-700 transition">
                   <div>
                     <span className="text-lg font-black tracking-wider text-indigo-300 mr-3">{r.code}</span>
-                    <span className={`text-xs uppercase px-2 py-0.5 rounded-md font-bold ${
-                      r.status === "lobby" ? "bg-amber-950/40 text-amber-300 border border-amber-800/30" :
-                      r.status === "playing" ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/30" :
-                      "bg-slate-900 text-slate-400 border border-slate-800"
-                    }`}>
+                    <span className={`text-xs uppercase px-2 py-0.5 rounded-md font-bold ${r.status === "lobby" ? "bg-amber-950/40 text-amber-300 border border-amber-800/30" :
+                        r.status === "playing" ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/30" :
+                          "bg-slate-900 text-slate-400 border border-slate-800"
+                      }`}>
                       {r.status}
                     </span>
                     <div className="text-xs text-slate-500 mt-1">
@@ -367,9 +364,8 @@ function ChipRow(props: {
             key={option.value}
             type="button"
             onClick={() => props.onToggle(option.value)}
-            className={`rounded-full px-2.5 py-1 text-xs ${
-              active ? "bg-indigo-500 text-white" : "border border-slate-700 text-slate-300 hover:bg-slate-800"
-            }`}
+            className={`rounded-full px-2.5 py-1 text-xs ${active ? "bg-indigo-500 text-white" : "border border-slate-700 text-slate-300 hover:bg-slate-800"
+              }`}
           >
             {option.value} <span className="opacity-60">{option.count}</span>
           </button>
@@ -384,7 +380,7 @@ function PlexSettingsForm() {
   const [libraryName, setLibraryName] = useState("Music");
   const [hasToken, setHasToken] = useState(false);
   const [loading, setLoading] = useState(true);
-  
+
   const [pinCode, setPinCode] = useState<string | null>(null);
   const [pinId, setPinId] = useState<number | null>(null);
   const [checking, setChecking] = useState(false);
@@ -453,7 +449,7 @@ function PlexSettingsForm() {
   useEffect(() => {
     if (!checking || pinId === null) return;
     let timer: number;
-    
+
     const check = async () => {
       try {
         const res = await checkPlexAuth(pinId);
@@ -469,7 +465,7 @@ function PlexSettingsForm() {
         setChecking(false);
       }
     };
-    
+
     timer = window.setTimeout(check, 3000);
     return () => clearTimeout(timer);
   }, [checking, pinId]);
@@ -480,7 +476,7 @@ function PlexSettingsForm() {
     <section className="mt-8 border-t border-slate-900 pt-6">
       <h2 className="text-lg font-black font-heading text-slate-100">🔌 Plex Media Server (LAN)</h2>
       <p className="text-xs text-slate-550 mt-0.5">Link a local Plex Music Library to import tracks into your game library.</p>
-      
+
       <form onSubmit={handleSave} className="mt-4 space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs uppercase tracking-wide text-slate-500 font-bold">
@@ -521,28 +517,26 @@ function PlexSettingsForm() {
           >
             {testing ? "Testing..." : "Test Connection"}
           </button>
-          
+
           <button
             type="button"
             onClick={handleConnect}
-            className={`rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-md active:scale-[0.98] transition ${
-              hasToken ? "bg-emerald-600 hover:bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500"
-            }`}
+            className={`rounded-xl px-5 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-md active:scale-[0.98] transition ${hasToken ? "bg-emerald-600 hover:bg-emerald-500" : "bg-indigo-600 hover:bg-indigo-500"
+              }`}
           >
             {hasToken ? "✓ Plex Connected" : "🔗 Connect Plex"}
           </button>
-          
+
           {success && <span className="text-xs text-emerald-400 font-bold animate-pulse">✓ Saved!</span>}
           {error && <span className="text-xs text-rose-400 font-bold">{error}</span>}
         </div>
       </form>
 
       {testResult && (
-        <div className={`mt-4 p-4 rounded-xl border text-sm ${
-          testResult.success 
-            ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-300" 
+        <div className={`mt-4 p-4 rounded-xl border text-sm ${testResult.success
+            ? "border-emerald-500/25 bg-emerald-500/5 text-emerald-300"
             : "border-rose-500/25 bg-rose-500/5 text-rose-300"
-        }`}>
+          }`}>
           <div className="font-bold flex items-center gap-1.5">
             {testResult.success ? "✓ Connection Successful" : "⚠ Connection Failed"}
           </div>
@@ -855,11 +849,10 @@ function AiBenchmarkPanel() {
             <button
               type="button"
               onClick={showcasePlaying ? stopShowcasePlay : startShowcasePlay}
-              className={`rounded-xl border px-6 py-2.5 text-sm font-bold transition active:scale-[0.98] ${
-                showcasePlaying
+              className={`rounded-xl border px-6 py-2.5 text-sm font-bold transition active:scale-[0.98] ${showcasePlaying
                   ? "bg-rose-900/40 text-rose-300 border-rose-700/50 hover:bg-rose-900/60"
                   : "bg-slate-900 border-slate-800 text-slate-200 hover:bg-slate-800"
-              }`}
+                }`}
             >
               {showcasePlaying ? "■ Stop Preview" : "🔊 Play Showcase Preview"}
             </button>
@@ -920,11 +913,10 @@ function AiBenchmarkPanel() {
                 {showcase.cues.map((_, i) => (
                   <span
                     key={i}
-                    className={`h-2 w-2 rounded-full transition ${
-                      showcasePlaying && i <= activeCueIndex
+                    className={`h-2 w-2 rounded-full transition ${showcasePlaying && i <= activeCueIndex
                         ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
                         : "bg-slate-800"
-                    }`}
+                      }`}
                   />
                 ))}
               </div>

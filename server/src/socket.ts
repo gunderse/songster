@@ -75,6 +75,18 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       if (room !== undefined) logger.info({ code: room.code }, "game started");
     });
 
+    socket.on("room:pause", (payload) => {
+      const parsed = roomCodeSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.pauseGame(parsed.data.code);
+    });
+
+    socket.on("room:resume", (payload) => {
+      const parsed = roomCodeSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.resumeGame(parsed.data.code);
+    });
+
     socket.on("admin:addBot", (payload) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) return;

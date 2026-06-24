@@ -150,6 +150,9 @@ interface Game {
   countdownReady: boolean;
   countdownTimer: ReturnType<typeof setTimeout> | null;
   history: GameHistoryEntry[];
+  paused: boolean;
+  pauseRemainingMs: number | null;
+  revealDeadline: number | null;
 }
 
 interface Room {
@@ -421,6 +424,9 @@ export class RoomManager {
       countdownReady: false,
       countdownTimer: null,
       history: [],
+      paused: false,
+      pauseRemainingMs: null,
+      revealDeadline: null,
     };
     for (const player of room.players.values()) {
       player.tokens = room.config.tokensPerPlayer;
@@ -727,7 +733,7 @@ export class RoomManager {
     if (found === undefined) return undefined;
     const { room } = found;
     const game = room.game;
-    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
     if (Date.now() < game.active.snippetEndsAt) return room; // still playing
 
     const song = game.active.song;
@@ -744,7 +750,7 @@ export class RoomManager {
     if (found === undefined) return undefined;
     const { room, player } = found;
     const game = room.game;
-    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
     if (player.teamId === null || player.teamId === game.active.teamId) return room; // opponents only
     if (player.tokens <= 0 || game.active.steal !== null) return room; // one steal per turn
 
@@ -759,7 +765,7 @@ export class RoomManager {
 
   private resolvePlacement(room: Room, playerId: string, index: number): Room {
     const game = room.game;
-    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
     if (game.active.placerId !== playerId) return room;
 
     const team = game.teams.find((t) => t.teamId === game.active!.teamId);
@@ -863,12 +869,15 @@ export class RoomManager {
     if (reason === "finale") {
       const winnerName = room.teams.find((t) => t.id === winnerTeamId)?.name ?? "The winners";
       headline = `${winnerName} win Songster!`;
-    } else if (stealResult?.correct === true) {
+    } else if (stealResult?.correct === true && room.config.showcaseSteals) {
       reason = "steal";
       headline = `${stealResult.playerName} STOLE the card right out from under ${teamName}!`;
-    } else if (leadChanged) {
+    } else if (leadChanged && room.config.showcaseLeadChanges) {
       reason = "leadChange";
       headline = `${room.teams.find((t) => t.id === newLeader)?.name ?? "Someone"} just grabbed the lead!`;
+    } else if (correct && team.streak >= 3 && room.config.showcaseStreaks) {
+      reason = "streak";
+      headline = `${teamName} is on a fire streak of ${team.streak} in a row!`;
     } else if (game.turnCounter % showcaseEveryN === 0) {
       reason = "milestone";
       headline = "Time for a check-in on the competition!";
@@ -917,6 +926,7 @@ export class RoomManager {
     const game = room.game;
     if (game === null) return;
     game.revealTimer = null;
+    game.revealDeadline = null;
     game.turnIndex = nextRotation(game.turnIndex, game.teams.length);
     this.beginTurn(room);
   }
@@ -1086,13 +1096,19 @@ export class RoomManager {
       // ALWAYS push the caption + (optional) audio. The Voice API may have failed
       // — text-only is still shown so the host always has something to say.
       this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
+      const delayVal = Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800);
+      game.revealDeadline = Date.now() + delayVal;
       game.revealTimer = setTimeout(() => {
-        if (room.game !== null && room.game.winnerTeamId !== null) {
-          this.finishGame(room);
-        } else {
-          this.advanceTurn(room);
+        if (room.game !== null) {
+          room.game.revealDeadline = null;
+          room.game.revealTimer = null;
+          if (room.game.winnerTeamId !== null) {
+            this.finishGame(room);
+          } else {
+            this.advanceTurn(room);
+          }
         }
-      }, Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800));
+      }, delayVal);
       return;
     }
 
@@ -1101,13 +1117,19 @@ export class RoomManager {
     // push it and extend the turn to fit. The voice never gets dropped on the floor.
     logger.info({ code: room.code, turnId }, "emcee: suspense ceiling hit; waiting for late voice");
     const baseTimerStart = Date.now();
+    const delayVal = Math.max(POST_REVEAL_MIN_MS, REVEAL_MS);
+    game.revealDeadline = Date.now() + delayVal;
     game.revealTimer = setTimeout(() => {
-      if (room.game !== null && room.game.winnerTeamId !== null) {
-        this.finishGame(room);
-      } else {
-        this.advanceTurn(room);
+      if (room.game !== null) {
+        room.game.revealDeadline = null;
+        room.game.revealTimer = null;
+        if (room.game.winnerTeamId !== null) {
+          this.finishGame(room);
+        } else {
+          this.advanceTurn(room);
+        }
       }
-    }, Math.max(POST_REVEAL_MIN_MS, REVEAL_MS));
+    }, delayVal);
 
     const pending = game.active.emceePromise;
     if (pending === null) return;
@@ -1125,13 +1147,19 @@ export class RoomManager {
       logger.info({ code: room.code, turnId, delayMs: Date.now() - baseTimerStart }, "emcee: late voice delivered");
       // Extend the timer so the late voice gets to finish.
       if (room.game.revealTimer !== null) clearTimeout(room.game.revealTimer);
+      const lateDelayVal = Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800);
+      room.game.revealDeadline = Date.now() + lateDelayVal;
       room.game.revealTimer = setTimeout(() => {
-        if (room.game !== null && room.game.winnerTeamId !== null) {
-          this.finishGame(room);
-        } else {
-          this.advanceTurn(room);
+        if (room.game !== null) {
+          room.game.revealDeadline = null;
+          room.game.revealTimer = null;
+          if (room.game.winnerTeamId !== null) {
+            this.finishGame(room);
+          } else {
+            this.advanceTurn(room);
+          }
         }
-      }, Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800));
+      }, lateDelayVal);
     })();
   }
 
@@ -1196,7 +1224,15 @@ export class RoomManager {
     if (reason !== "finale") {
       const total = view.cues.reduce((sum, cue) => sum + cue.durationMs, 0) + 4000;
       if (game.revealTimer !== null) clearTimeout(game.revealTimer);
-      game.revealTimer = setTimeout(() => this.advanceTurn(room), Math.max(SHOWCASE_FLOOR_MS, total));
+      const delayVal = Math.max(SHOWCASE_FLOOR_MS, total);
+      game.revealDeadline = Date.now() + delayVal;
+      game.revealTimer = setTimeout(() => {
+        if (room.game !== null) {
+          room.game.revealDeadline = null;
+          room.game.revealTimer = null;
+        }
+        this.advanceTurn(room);
+      }, delayVal);
     } else {
       // Finale: the winner screen now takes over (game.winnerTeamId was
       // promoted by onReveal). The showcase plays over it; no advanceTurn.
@@ -1346,6 +1382,7 @@ export class RoomManager {
         clearTimeout(game.revealTimer);
         game.revealTimer = null;
       }
+      game.revealDeadline = null;
       if (game.countdownTimer !== null) {
         clearTimeout(game.countdownTimer);
         game.countdownTimer = null;
@@ -1459,6 +1496,7 @@ export class RoomManager {
       countdownEndsAt: game.countdownEndsAt,
       countdownReady: game.countdownReady,
       commentaryPending: game.active?.commentaryPending ?? false,
+      paused: game.paused,
     };
   }
 
@@ -1490,6 +1528,105 @@ export class RoomManager {
       if (!this.rooms.has(code)) return code;
     }
     throw new Error("Could not allocate a unique room code.");
+  }
+
+  pauseGame(code: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined || room.game === null) return undefined;
+    const game = room.game;
+    if (game.paused) return room;
+
+    game.paused = true;
+
+    // 1. Pause countdownTimer
+    if (game.countdownTimer !== null) {
+      clearTimeout(game.countdownTimer);
+      game.countdownTimer = null;
+      if (game.countdownEndsAt !== null) {
+        game.pauseRemainingMs = Math.max(0, game.countdownEndsAt - Date.now());
+        game.countdownEndsAt = null;
+      }
+    }
+
+    // 2. Pause revealTimer
+    if (game.revealTimer !== null) {
+      clearTimeout(game.revealTimer);
+      game.revealTimer = null;
+      if (game.revealDeadline !== null) {
+        game.pauseRemainingMs = Math.max(0, game.revealDeadline - Date.now());
+        game.revealDeadline = null;
+      }
+    }
+
+    // 3. Pause placeTimer (turn auto-resolve)
+    if (game.active !== null && game.active.placeTimer !== null) {
+      clearTimeout(game.active.placeTimer);
+      game.active.placeTimer = null;
+      if (game.active.placeDeadline !== null) {
+        game.pauseRemainingMs = Math.max(0, game.active.placeDeadline - Date.now());
+        game.active.placeDeadline = null;
+      }
+    }
+
+    logger.info({ code: room.code, remainingMs: game.pauseRemainingMs }, "game paused");
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  resumeGame(code: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined || room.game === null) return undefined;
+    const game = room.game;
+    if (!game.paused) return room;
+
+    game.paused = false;
+    const remainingMs = game.pauseRemainingMs ?? 0;
+    game.pauseRemainingMs = null;
+
+    logger.info({ code: room.code, remainingMs }, "game resumed");
+
+    // 1. Was it in countdown phase?
+    if (game.active === null && remainingMs > 0) {
+      game.countdownEndsAt = Date.now() + remainingMs;
+      game.countdownTimer = setTimeout(() => {
+        if (room.game !== null) {
+          room.game.countdownTimer = null;
+          room.game.countdownEndsAt = null;
+          this.beginTurn(room);
+        }
+      }, remainingMs);
+    }
+    // 2. Was it in reveal timer phase?
+    else if (game.active !== null && game.active.phase === "revealing" && remainingMs > 0) {
+      game.revealDeadline = Date.now() + remainingMs;
+      game.revealTimer = setTimeout(() => {
+        if (room.game !== null) {
+          room.game.revealTimer = null;
+          room.game.revealDeadline = null;
+          if (room.game.winnerTeamId !== null) {
+            this.finishGame(room);
+          } else {
+            this.advanceTurn(room);
+          }
+        }
+      }, remainingMs);
+    }
+    // 3. Was it in placeTimer phase?
+    else if (game.active !== null && game.active.phase === "placing" && remainingMs > 0) {
+      const turnId = game.turnCounter;
+      game.active.placeDeadline = Date.now() + remainingMs;
+      game.active.placeTimer = setTimeout(() => this.autoResolveTurn(room, turnId), remainingMs);
+    } else {
+      // Fallback
+      if (game.active === null) {
+        this.beginTurn(room);
+      } else if (game.active.phase === "placing") {
+        this.armPlaceTimer(room);
+      }
+    }
+
+    this.hooks.broadcast(room.code);
+    return room;
   }
 }
 

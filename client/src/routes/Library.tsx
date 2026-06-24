@@ -881,6 +881,36 @@ export function Library() {
                   No Plex tracks found. Try searching or adjusting your query.
                 </p>
               )}
+              {/* Bottom Pagination Controls */}
+              {plexTotalSize > 0 && (
+                <div className="flex items-center justify-center gap-2 mt-6 py-4 border-t border-slate-900/30">
+                  <button
+                    type="button"
+                    disabled={plexStart === 0 || plexLoading}
+                    onClick={() => {
+                      loadPlexSongs(Math.max(0, plexStart - plexPageSize));
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="rounded-xl border border-white/10 bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40 transition"
+                  >
+                    ◀ Prev
+                  </button>
+                  <span className="text-xs text-slate-400 font-semibold">
+                    {plexStart + 1} - {Math.min(plexStart + plexPageSize, plexTotalSize)} of {plexTotalSize}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={plexStart + plexPageSize >= plexTotalSize || plexLoading}
+                    onClick={() => {
+                      loadPlexSongs(plexStart + plexPageSize);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="rounded-xl border border-white/10 bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40 transition"
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1991,6 +2021,34 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
   const [selectedArtUrl, setSelectedArtUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [duplicateExists, setDuplicateExists] = useState(false);
+
+  useEffect(() => {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setDuplicateExists(false);
+      return;
+    }
+    let active = true;
+    const timer = setTimeout(() => {
+      fetchSongs({ searchTitle: trimmedTitle })
+        .then((songs) => {
+          if (!active) return;
+          const exists = songs.some(
+            (s) => s.title?.toLowerCase() === trimmedTitle.toLowerCase()
+          );
+          setDuplicateExists(exists);
+        })
+        .catch((err) => {
+          console.error("Failed to check duplicate titles", err);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [title]);
+
   // Search lookup state
   const [searchTitle, setSearchTitle] = useState(track.title);
   const [searchArtist, setSearchArtist] = useState(
@@ -2504,7 +2562,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex flex-wrap gap-4 items-center justify-between">
           <button
             type="button"
             onClick={onClose}
@@ -2513,7 +2571,12 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
             Cancel
           </button>
           
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {duplicateExists && (
+              <span className="text-xs text-amber-400 font-bold bg-amber-950/40 border border-amber-800/30 rounded-lg px-3 py-1.5 animate-pulse flex items-center gap-1.5 mr-2">
+                ⚠️ Duplicate title in library
+              </span>
+            )}
             <button
               type="button"
               disabled={busy}

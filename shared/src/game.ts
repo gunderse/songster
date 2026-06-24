@@ -83,6 +83,7 @@ export interface GameView {
   countdownReady: boolean;
   /** True while the server is generating an outcome-aware emcee/showcase line. */
   commentaryPending: boolean;
+  paused: boolean;
 }
 
 export const placeCardSchema = z.object({ index: z.number().int().min(0).max(64) });
