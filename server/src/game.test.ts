@@ -29,6 +29,17 @@ test("ties are correct on either adjacent side", () => {
   assert.equal(isCorrectPlacement(timeline, 1, 1980), true); // equal to left neighbor
   assert.equal(isCorrectPlacement(timeline, 2, 1995), true); // equal to left neighbor
   assert.equal(isCorrectPlacement(timeline, 1, 1995), true); // equal to right neighbor
+
+  // same-year adjacent slots comprehensive checks
+  assert.equal(isCorrectPlacement(tl([1980]), 0, 1980), true); // before 1980
+  assert.equal(isCorrectPlacement(tl([1980]), 1, 1980), true); // after 1980
+  assert.equal(isCorrectPlacement(tl([1980, 1980]), 0, 1980), true); // before first 1980
+  assert.equal(isCorrectPlacement(tl([1980, 1980]), 1, 1980), true); // between two 1980s
+  assert.equal(isCorrectPlacement(tl([1980, 1980]), 2, 1980), true); // after second 1980
+
+  // coercion checks (in case database has string values)
+  assert.equal(isCorrectPlacement(tl([1980]), 0, "1980" as any), true);
+  assert.equal(isCorrectPlacement([{ year: "1980" as any }], 0, 1980), true);
 });
 
 test("out-of-range slots are rejected", () => {

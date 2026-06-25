@@ -1418,7 +1418,7 @@ function PlexTrackRow(props: {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5 text-sm text-slate-400 truncate mt-0.5">
+        <div className="flex flex-wrap items-center gap-1.5 text-sm text-slate-400 mt-0.5 min-w-0">
           {track.artist ? (
             <button
               type="button"
@@ -1808,8 +1808,8 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl max-h-[85vh] max-sm:max-h-none max-sm:h-auto max-sm:overflow-visible flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/50">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -2275,8 +2275,8 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
     : "—";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] max-sm:max-h-none max-sm:h-auto max-sm:overflow-visible flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-slate-800 bg-slate-950/50">

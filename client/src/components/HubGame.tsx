@@ -101,7 +101,7 @@ export function HubGame({
           <span className="text-slate-400 font-medium">
             {" · "}
             {active.placerName}
-            {suspense ? " locked in a guess" : revealing ? "'s result" : " is choosing"}
+            {suspense ? " locked in a guess" : revealing ? (result.timeout ? "'s time ran out" : "'s result") : " is choosing"}
           </span>
         </h2>
         {active.steal !== null && !revealing && (
@@ -143,7 +143,7 @@ export function HubGame({
                 style={{ borderColor: result.correct ? "#10b981" : "#f43f5e", pointerEvents: "none", boxShadow: result.correct ? "0 0 25px rgba(16,185,129,0.2)" : "0 0 25px rgba(244,63,94,0.2)" }} 
                 aria-hidden 
               />
-              <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
+              <div className="text-6xl">{result.correct ? "✅" : (result.timeout ? "⏰" : "❌")}</div>
               <div className="relative mt-2 h-32 w-32 group">
                 {result.song.hasArt ? (
                   <img src={artUrl(result.song.songId)} alt="" className="h-full w-full rounded-2xl object-cover border border-white/10 shadow-lg transition-transform group-hover:scale-105" />

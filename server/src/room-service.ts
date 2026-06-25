@@ -68,6 +68,7 @@ interface Player {
   joinedAt: number;
   isBot: boolean;
   tokens: number;
+  lastPlacedAt?: number;
 }
 
 interface Team {
@@ -291,6 +292,7 @@ export class RoomManager {
       joinedAt: Date.now(),
       isBot: false,
       tokens: room.status === "playing" ? room.config.tokensPerPlayer : 0,
+      lastPlacedAt: 0,
     };
     room.players.set(player.id, player);
     return { ok: true, room, player };
@@ -310,6 +312,7 @@ export class RoomManager {
       joinedAt: Date.now(),
       isBot: true,
       tokens: 0,
+      lastPlacedAt: 0,
     };
     room.players.set(bot.id, bot);
     return room;
@@ -448,8 +451,12 @@ export class RoomManager {
         }
         room.game.hostName = hostName;
 
-        const teamNames = room.teams.map((t) => t.name);
-        const playerNames = [...room.players.values()].map((p) => p.name);
+        const teamsWithPlayers = room.teams.map((t) => {
+          const members = [...room.players.values()]
+            .filter((p) => p.teamId === t.id && p.connected)
+            .map((p) => p.name);
+          return { name: t.name, players: members };
+        });
 
         // Find the first player who will play
         let firstPlayerName: string | null = null;
@@ -476,8 +483,7 @@ export class RoomManager {
         // Generate the intro clip
         const clip = await emceeService.generateIntroClip(
           hostName,
-          teamNames,
-          playerNames,
+          teamsWithPlayers,
           room.game.target,
           firstPlayerName,
           { hasMultipleMembers }
@@ -784,7 +790,7 @@ export class RoomManager {
     const slot = Math.max(0, Math.min(index, team.timeline.length));
     const song = game.active.song;
     const placerName = room.players.get(playerId)?.name ?? "—";
-    const correct = isCorrectPlacement(team.timeline, slot, song.year);
+    const correct = timeout ? false : isCorrectPlacement(team.timeline, slot, song.year);
     if (correct) {
       team.timeline = insertCardAt(team.timeline, slot, sampledToCard(song, false));
       // Hide the just-placed card during suspense so the year doesn't leak.
@@ -798,7 +804,6 @@ export class RoomManager {
     // Resolve a Steal: an opponent wins the card only if the placer was WRONG
     // and the stealer's own placement is correct.
     let stealResult: StealResultView | null = null;
-    let stealWonTeamId: string | null = null;
     const steal = game.active.steal;
     if (steal !== null) {
       const stealerTeam = game.teams.find((t) => t.teamId === steal.teamId);
@@ -807,7 +812,6 @@ export class RoomManager {
       if (stealCorrect && stealerTeam !== undefined) {
         stealerTeam.timeline = insertCardAt(stealerTeam.timeline, steal.index, sampledToCard(song, false));
         game.active.hiddenSongIds.add(song.songId);
-        if (hasWon(scoreOf(stealerTeam.timeline), game.target)) stealWonTeamId = stealerTeam.teamId;
       }
       // Always record the stealer's slot so a "?" tile shows there too.
       game.active.pendingStealPlacement = { teamId: steal.teamId, index: steal.index };
@@ -858,17 +862,30 @@ export class RoomManager {
     this.hooks.broadcast(room.code);
 
     const revealedSong = { title: song.title, artist: song.artist, year: song.year };
-    const placerWon = correct && hasWon(scoreOf(team.timeline), game.target);
 
     // Track the lead (for "lead change" showcases).
     const newLeader = this.uniqueLeader(game);
     const leadChanged = newLeader !== null && game.leaderTeamId !== null && newLeader !== game.leaderTeamId;
     if (newLeader !== null) game.leaderTeamId = newLeader;
 
-    // Stash the winner trigger but DON'T promote to winnerTeamId yet — we want the
-    // drumroll + voiced reveal to land before the winner screen takes over.
-    const triggersWin = placerWon || stealWonTeamId !== null;
-    const winnerTeamId = placerWon ? team.teamId : stealWonTeamId;
+    // Check for round end and win condition
+    const isEndOfRound = game.turnIndex === game.teams.length - 1;
+    let triggersWin = false;
+    let winnerTeamId: string | null = null;
+
+    if (isEndOfRound) {
+      const teamScores = game.teams.map((t) => ({ teamId: t.teamId, score: scoreOf(t.timeline) }));
+      const maxScore = Math.max(...teamScores.map((ts) => ts.score));
+      if (maxScore >= game.target) {
+        const leaders = teamScores.filter((ts) => ts.score === maxScore);
+        if (leaders.length === 1) {
+          triggersWin = true;
+          winnerTeamId = leaders[0]!.teamId;
+        } else {
+          logger.info({ code: room.code, maxScore }, "Tied game at target score; extending for tiebreaker sudden death");
+        }
+      }
+    }
 
     // Pick the reveal "outro": a full showcase at peaks, else the single emcee line.
     const teamName = room.teams.find((t) => t.id === team.teamId)?.name ?? "the team";
@@ -886,7 +903,7 @@ export class RoomManager {
     } else if (correct && team.streak >= 3 && room.config.showcaseStreaks) {
       reason = "streak";
       headline = `${teamName} is on a fire streak of ${team.streak} in a row!`;
-    } else if (game.turnCounter % showcaseEveryN === 0) {
+    } else if (game.turnCounter % showcaseEveryN === 0 && room.config.showcaseMilestones) {
       reason = "milestone";
       headline = "Time for a check-in on the competition!";
     }
@@ -977,11 +994,14 @@ export class RoomManager {
     if (game.hostName === null || game.active === null || game.turnCounter !== turnId) return;
 
     let preGeneratedText: string | null = null;
+    const isTimeout = game.active.pendingResult?.timeout ?? false;
     try {
-      if (correct && game.active.preGeneratedCorrectPromise) {
-        preGeneratedText = await game.active.preGeneratedCorrectPromise;
-      } else if (!correct && game.active.preGeneratedWrongPromise) {
-        preGeneratedText = await game.active.preGeneratedWrongPromise;
+      if (!isTimeout) {
+        if (correct && game.active.preGeneratedCorrectPromise) {
+          preGeneratedText = await game.active.preGeneratedCorrectPromise;
+        } else if (!correct && game.active.preGeneratedWrongPromise) {
+          preGeneratedText = await game.active.preGeneratedWrongPromise;
+        }
       }
     } catch (err) {
       logger.warn({ error: getErrorMessage(err) }, "error retrieving pre-generated emcee script");
@@ -1005,6 +1025,7 @@ export class RoomManager {
   ): EmceeContext {
     const active = game.active!;
     const team = game.teams.find((t) => t.teamId === active.teamId);
+    const isTimeout = active.pendingResult?.timeout ?? false;
 
     let stealInfo = null;
     if (active.pendingResult?.steal?.correct) {
@@ -1035,6 +1056,7 @@ export class RoomManager {
       leadChange: leadChangeInfo,
       streak: streakInfo,
       nextPlayerName,
+      timeout: isTimeout,
     };
   }
 
@@ -1213,6 +1235,48 @@ export class RoomManager {
     const nextPlayer = this.determineNextPlacer(room, game);
     const nextPlayerName = nextPlayer ? nextPlayer.name : null;
 
+    let winningTimeline: any[] | undefined = undefined;
+    if (reason === "finale") {
+      const teamScores = game.teams.map((t) => ({ teamId: t.teamId, score: scoreOf(t.timeline) }));
+      const maxScore = Math.max(...teamScores.map((ts) => ts.score));
+      let winningTeamId: string | null = null;
+      if (maxScore >= game.target) {
+        const leaders = teamScores.filter((ts) => ts.score === maxScore);
+        if (leaders.length === 1) {
+          winningTeamId = leaders[0]!.teamId;
+        }
+      }
+      if (winningTeamId !== null) {
+        const winningTeam = game.teams.find((t) => t.teamId === winningTeamId);
+        if (winningTeam && winningTeam.timeline.length > 0) {
+          const songIds = winningTeam.timeline.map((card) => card.songId);
+          try {
+            const rows = this.db.prepare(
+              `SELECT id, year, title, artist, snippet_start_s, snippet_len_s, duration_s
+               FROM songs WHERE id IN (${songIds.map(() => "?").join(",")})`
+            ).all(songIds) as any[];
+
+            const songMap = new Map<string, any>();
+            for (const r of rows) {
+              songMap.set(r.id, {
+                songId: r.id,
+                title: r.title,
+                artist: r.artist,
+                year: r.year,
+                snippetStartS: r.snippet_start_s ?? 30,
+                snippetLenS: r.snippet_len_s ?? room.config.snippetLenS ?? 20,
+              });
+            }
+            winningTimeline = winningTeam.timeline
+              .map((card) => songMap.get(card.songId))
+              .filter((song) => song !== undefined);
+          } catch (err) {
+            logger.error({ error: getErrorMessage(err) }, "failed to load winning timeline details for finale showcase");
+          }
+        }
+      }
+    }
+
     const view = await showcaseService.build({
       reason,
       song,
@@ -1222,6 +1286,7 @@ export class RoomManager {
       gameHistory,
       playerMentions,
       nextPlayerName,
+      winningTimeline,
     });
 
     // Honour the suspense floor — but cap so a slow showcase can't stall forever.
@@ -1300,6 +1365,8 @@ export class RoomManager {
       this.hooks.broadcast(room.code);
       return;
     }
+
+    placer.lastPlacedAt = Date.now();
 
     const song = sampleOne(this.db, room.config.deck, room.config.musicSource, [...game.used]);
     if (song === null) {
@@ -1432,9 +1499,14 @@ export class RoomManager {
   private pickPlacer(room: Room, team: GameTeam): Player | null {
     const members = [...room.players.values()]
       .filter((p) => p.teamId === team.teamId && p.connected)
-      .sort((a, b) => a.joinedAt - b.joinedAt);
+      .sort((a, b) => {
+        const aTime = a.lastPlacedAt ?? 0;
+        const bTime = b.lastPlacedAt ?? 0;
+        if (aTime !== bTime) return aTime - bTime;
+        return a.joinedAt - b.joinedAt;
+      });
     if (members.length === 0) return null;
-    return members[team.placerIndex % members.length]!;
+    return members[0]!;
   }
 
   private determineNextPlacer(room: Room, game: Game): Player | null {
@@ -1444,9 +1516,14 @@ export class RoomManager {
       const team = game.teams[tempTurnIndex % game.teams.length]!;
       const members = [...room.players.values()]
         .filter((p) => p.teamId === team.teamId && p.connected)
-        .sort((a, b) => a.joinedAt - b.joinedAt);
+        .sort((a, b) => {
+          const aTime = a.lastPlacedAt ?? 0;
+          const bTime = b.lastPlacedAt ?? 0;
+          if (aTime !== bTime) return aTime - bTime;
+          return a.joinedAt - b.joinedAt;
+        });
       if (members.length > 0) {
-        return members[team.placerIndex % members.length]!;
+        return members[0]!;
       }
       tempTurnIndex = nextRotation(tempTurnIndex, game.teams.length);
       attempts += 1;

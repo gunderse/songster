@@ -127,13 +127,13 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           style={{ transformStyle: "preserve-3d" }}
           className={`flex flex-col items-center gap-3 rounded-3xl border bg-slate-900/90 backdrop-blur-md px-10 py-8 shadow-2xl ${borderCol}`}
         >
-          <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
+          <div className="text-6xl">{result.correct ? "✅" : (result.timeout ? "⏰" : "❌")}</div>
           <div className="text-6xl font-black font-heading tabular-nums text-slate-100">{result.song.year}</div>
           <div className="text-xl font-bold font-heading line-clamp-1 text-slate-200 mt-2">{result.song.title ?? "Unknown"}</div>
           <div className="text-slate-400 text-sm line-clamp-1 font-semibold">{result.song.artist ?? ""}</div>
         </motion.div>
         <p className="mt-2 text-sm font-bold tracking-wide uppercase" style={{ color: result.correct ? "#34d399" : "#f43f5e" }}>
-          {result.placerName} {result.correct ? "nailed it!" : "missed"}
+          {result.placerName} {result.correct ? "nailed it!" : (result.timeout ? "ran out of time!" : "missed")}
         </p>
         {result.steal !== null && (
           <p className="text-sm font-bold uppercase tracking-wider mt-1" style={{ color: result.steal.correct ? "#fbbf24" : "#64748b" }}>

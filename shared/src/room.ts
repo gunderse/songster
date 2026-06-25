@@ -26,6 +26,7 @@ export const roomConfigSchema = z.object({
   showcaseSteals: z.boolean().default(false),
   showcaseLeadChanges: z.boolean().default(false),
   showcaseStreaks: z.boolean().default(false),
+  showcaseMilestones: z.boolean().default(false),
 });
 export type RoomConfig = z.infer<typeof roomConfigSchema>;
 

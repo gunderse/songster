@@ -32,6 +32,7 @@ export function Admin() {
   const [showcaseSteals, setShowcaseSteals] = useState(false);
   const [showcaseLeadChanges, setShowcaseLeadChanges] = useState(false);
   const [showcaseStreaks, setShowcaseStreaks] = useState(false);
+  const [showcaseMilestones, setShowcaseMilestones] = useState(false);
 
   useEffect(() => {
     fetchFacets().then(setFacets).catch(() => undefined);
@@ -87,6 +88,7 @@ export function Admin() {
       showcaseSteals,
       showcaseLeadChanges,
       showcaseStreaks,
+      showcaseMilestones,
     };
     if (!socket.connected) socket.connect();
     socket.emit("room:create", { config }, (res: CreateAck) => {
@@ -137,11 +139,12 @@ export function Admin() {
 
         <div className="mt-6">
           <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Multi-Character Showcase Highlights (Finale only by default)</label>
-          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
               ["Steals", showcaseSteals, setShowcaseSteals],
               ["Lead Changes", showcaseLeadChanges, setShowcaseLeadChanges],
               ["Streaks (3+ in a row)", showcaseStreaks, setShowcaseStreaks],
+              ["Milestones (Every 4th turn)", showcaseMilestones, setShowcaseMilestones],
             ].map(([label, value, onChange]) => {
               const active = !!value;
               return (

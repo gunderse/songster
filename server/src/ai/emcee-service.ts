@@ -22,6 +22,7 @@ export interface EmceeContext {
   leadChange?: { newLeaderName: string } | null;
   streak?: { streakCount: number } | null;
   nextPlayerName?: string | null;
+  timeout?: boolean;
 }
 
 export interface EmceeClip {
@@ -114,15 +115,15 @@ export class EmceeService {
 
   async generateIntroClip(
     hostName: string,
-    teamNames: string[],
-    playerNames: string[],
+    teamsWithPlayers: Array<{ name: string; players: string[] }>,
     targetSongs: number,
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
   ): Promise<EmceeClip | null> {
     let text: string;
+    const teamNames = teamsWithPlayers.map((t) => t.name);
     try {
-      text = await this.generateIntroText(hostName, teamNames, playerNames, targetSongs, nextPlayerName, teamsConfig);
+      text = await this.generateIntroText(hostName, teamsWithPlayers, targetSongs, nextPlayerName, teamsConfig);
     } catch (error) {
       logger.warn({ error: getErrorMessage(error) }, "emcee intro script failed; using fallback");
       text = fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
@@ -153,8 +154,7 @@ export class EmceeService {
 
   private async generateIntroText(
     hostName: string,
-    teamNames: string[],
-    playerNames: string[],
+    teamsWithPlayers: Array<{ name: string; players: string[] }>,
     targetSongs: number,
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
@@ -163,10 +163,14 @@ export class EmceeService {
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
 
+    const teamDescriptions = teamsWithPlayers
+      .map((t) => `Team ${t.name} (with players: ${t.players.length > 0 ? t.players.join(", ") : "no players"})`)
+      .join(", and ");
+
     const instructions = [
       `You are ${hostName}, a ${persona} host on a live music game show called Songster.`,
       `Rival teams listen to song snippets and place them chronologically on their timeline.`,
-      `Introduce the rivals: we have teams ${teamNames.join(" and ")} with players ${playerNames.join(", ")}.`,
+      `Introduce the rivals: we have ${teamDescriptions}.`,
       `State the critical rule: the first team to place ${targetSongs} songs correctly wins.`,
     ];
 
@@ -178,7 +182,7 @@ export class EmceeService {
 
     instructions.push(
       `Explain how steals work: if an opposing team spends a steal token to challenge *before* the active team submits their guess, and the active team's guess is wrong, the card is tested against the stealer's guessed slot. If the stealer is correct, their team steals the card! Only one steal attempt is allowed per turn.`,
-      `Explain tiebreaking: because turns are sequential, the first team to reach ${targetSongs} wins immediately. If there is a tie, we keep playing until a team scores the winning point.`
+      `Explain tiebreaking: teams must have an equal number of turns. If there is a tie at the target score of ${targetSongs} at the end of a round, we enter sudden-death rounds until one team pulls ahead.`
     );
 
     if (nextPlayerName) {
@@ -202,7 +206,7 @@ export class EmceeService {
   }
 
   async generateText(hostName: string, context: EmceeContext): Promise<string> {
-    const { song, situation, teamName, placerName, outcome, steal, leadChange, streak, nextPlayerName } = context;
+    const { song, situation, teamName, placerName, outcome, steal, leadChange, streak, nextPlayerName, timeout } = context;
     const characters = await voiceGeneratorService.listCharacters().catch(() => [] as VoiceCharacter[]);
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
@@ -210,7 +214,9 @@ export class EmceeService {
     const verdict =
       outcome === "correct"
         ? `${placerName} of team ${teamName} placed it CORRECTLY — celebrate the right call.`
-        : `${placerName} of team ${teamName} placed it WRONG — playfully rib them for the miss.`;
+        : (timeout
+            ? `${placerName} of team ${teamName} RAN OUT OF TIME — playfully rib them for freezing up and failing to place the card.`
+            : `${placerName} of team ${teamName} placed it WRONG — playfully rib them for the miss.`);
 
     const instructions = [
       `You are ${hostName}, a ${persona} host on a live music game show with rival teams.`,
@@ -255,9 +261,13 @@ export class EmceeService {
 }
 
 function fallbackLine(context: EmceeContext): string {
-  const { song, outcome, teamName, steal, leadChange, streak, nextPlayerName } = context;
+  const { song, outcome, teamName, steal, leadChange, streak, nextPlayerName, timeout } = context;
   const who = song.artist !== null ? ` by ${song.artist}` : "";
-  let verdict = outcome === "correct" ? `Correct, ${teamName}!` : `Not quite, ${teamName}!`;
+  let verdict = outcome === "correct"
+    ? `Correct, ${teamName}!`
+    : (timeout
+        ? `Time's up, ${teamName}! You ran out of time.`
+        : `Not quite, ${teamName}!`);
   if (steal) {
     verdict += ` ${steal.stealerName} stole it for team ${steal.stealerTeamName}!`;
   } else if (leadChange) {

@@ -98,6 +98,9 @@ export interface ShowcaseCueView {
   text: string;
   audioUrl: string | null;
   durationMs: number;
+  songId?: string;
+  snippetStartS?: number;
+  snippetLenS?: number;
 }
 
 export interface ShowcaseView {

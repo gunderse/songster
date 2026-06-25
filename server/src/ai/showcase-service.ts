@@ -30,6 +30,11 @@ export interface ShowcaseContext {
   }>;
   playerMentions?: string[];
   nextPlayerName?: string | null;
+  winningTimeline?: Array<{
+    songId: string;
+    snippetStartS: number;
+    snippetLenS: number | null;
+  }>;
 }
 
 interface ThemeConfig {
@@ -156,7 +161,8 @@ export class ShowcaseService {
     }
 
     const voiced: ShowcaseCueView[] = [];
-    for (const cue of cues) {
+    for (let i = 0; i < cues.length; i++) {
+      const cue = cues[i]!;
       const characterName = cue.speaker === "cohost" && cast.cohost !== null ? cast.cohost : cast.host;
       const speakerLabel = cue.speaker === "cohost" ? (theme.roles.cohost ?? theme.roles.host) : theme.roles.host;
       const cleanedText = cleanDialogText(cue.text);
@@ -169,7 +175,25 @@ export class ShowcaseService {
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), characterName }, "showcase cue voice failed; caption only");
       }
-      voiced.push({ speakerLabel, characterName, text: stripEmphasis(cleanedText), audioUrl, durationMs });
+
+      let extra = {};
+      if (context.reason === "finale" && context.winningTimeline && context.winningTimeline.length > 0) {
+        const s = context.winningTimeline[i % context.winningTimeline.length]!;
+        extra = {
+          songId: s.songId,
+          snippetStartS: s.snippetStartS,
+          snippetLenS: s.snippetLenS ?? undefined,
+        };
+      }
+
+      voiced.push({
+        speakerLabel,
+        characterName,
+        text: stripEmphasis(cleanedText),
+        audioUrl,
+        durationMs,
+        ...extra,
+      });
     }
 
     logger.info({ theme: theme.id, reason: context.reason, host: cast.host, cohost: cast.cohost, cues: voiced.length }, "showcase built");

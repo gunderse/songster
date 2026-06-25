@@ -22,10 +22,18 @@ export function winConfetti(): void {
   frame();
 }
 
+const SILENT_AUDIO = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAAA";
+
 let ctx: AudioContext | null = null;
 let unlocked = false;
-let snippetEl: HTMLAudioElement | null = null;
 let snippetStopTimer: ReturnType<typeof setTimeout> | null = null;
+
+const snippetEl = new Audio(SILENT_AUDIO);
+const voiceEl = new Audio(SILENT_AUDIO);
+const bgEl = new Audio(SILENT_AUDIO);
+const sfxCorrectEl = new Audio("/effects/correct.mp3");
+const sfxIncorrectEl = new Audio("/effects/incorrect.mp3");
+const sfxTimesUpEl = new Audio("/effects/times-up.mp3");
 
 function getCtx(): AudioContext {
   ctx ??= new AudioContext();
@@ -41,6 +49,13 @@ export function unlockAudio(): void {
   unlocked = true;
   const context = getCtx();
   if (context.state !== "running") void context.resume();
+
+  // Bless all audio elements synchronously inside this user gesture so Safari/iOS allows dynamic play
+  for (const el of [snippetEl, voiceEl, bgEl, sfxCorrectEl, sfxIncorrectEl, sfxTimesUpEl]) {
+    void el.play().then(() => {
+      el.pause();
+    }).catch(() => undefined);
+  }
 }
 
 function fade(el: HTMLAudioElement, from: number, to: number, ms: number): void {
@@ -53,14 +68,13 @@ function fade(el: HTMLAudioElement, from: number, to: number, ms: number): void 
   }, ms / steps);
 }
 
-export function playSnippet(url: string, startS: number, lenS: number): void {
+export function playSnippet(url: string, startS: number, lenS: number, maxVolume = 1): void {
   stopSnippet();
   if (!unlocked) return;
-  const el = new Audio();
+  const el = snippetEl;
   el.src = url;
   el.preload = "auto";
   el.volume = 0;
-  snippetEl = el;
 
   const onReady = () => {
     try {
@@ -69,7 +83,7 @@ export function playSnippet(url: string, startS: number, lenS: number): void {
       // seeking may be unsupported until more data loads; fall back to start
     }
     void el.play().catch(() => undefined);
-    fade(el, 0, 1, 400);
+    fade(el, 0, maxVolume, 400);
     snippetStopTimer = setTimeout(
       () => {
         fade(el, el.volume, 0, 500);
@@ -78,7 +92,7 @@ export function playSnippet(url: string, startS: number, lenS: number): void {
       Math.max(800, lenS * 1000 - 500),
     );
   };
-  el.addEventListener("canplay", onReady, { once: true });
+  el.oncanplay = onReady;
   el.load();
 }
 
@@ -87,13 +101,12 @@ export function stopSnippet(): void {
     clearTimeout(snippetStopTimer);
     snippetStopTimer = null;
   }
-  if (snippetEl !== null) {
-    try {
-      snippetEl.pause();
-    } catch {
-      // ignore
-    }
-    snippetEl = null;
+  const el = snippetEl;
+  el.oncanplay = null;
+  try {
+    el.pause();
+  } catch {
+    // ignore
   }
 }
 
@@ -103,65 +116,59 @@ export function fadeOutSnippet(ms = 1600): void {
     clearTimeout(snippetStopTimer);
     snippetStopTimer = null;
   }
-  const el = snippetEl;
-  if (el === null) return;
-  fade(el, el.volume, 0, ms);
-  setTimeout(() => {
-    if (snippetEl === el) stopSnippet();
-  }, ms + 80);
+  fade(snippetEl, snippetEl.volume, 0, ms);
+  setTimeout(stopSnippet, ms + 80);
 }
-
-let voiceEl: HTMLAudioElement | null = null;
 
 /** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */
 export function playVoiceUrl(url: string | null): void {
   stopVoice();
   if (url === null || !unlocked) return;
-  const el = new Audio(url);
+  const el = voiceEl;
+  el.onended = null;
+  el.onerror = null;
+  el.src = url;
   el.volume = 1;
-  voiceEl = el;
+  el.load();
   void el.play().catch(() => undefined);
 }
 
 export function stopVoice(): void {
-  if (voiceEl !== null) {
-    try {
-      voiceEl.pause();
-    } catch {
-      // ignore
-    }
-    voiceEl = null;
+  const el = voiceEl;
+  el.onended = null;
+  el.onerror = null;
+  try {
+    el.pause();
+  } catch {
+    // ignore
   }
 }
 
 // ── showcase playback: a looped music bed + sequential voiced cues ──────────
 
-let bgEl: HTMLAudioElement | null = null;
 let cueChain: { cancelled: boolean } | null = null;
 
 export function startBgMusic(url: string, volume = 0.18): void {
   stopBgMusic();
   if (!unlocked) return;
-  const el = new Audio(url);
+  const el = bgEl;
+  el.src = url;
   el.loop = true;
   el.volume = volume;
-  bgEl = el;
+  el.load();
   void el.play().catch(() => undefined);
 }
 
 export function stopBgMusic(): void {
-  if (bgEl !== null) {
-    try {
-      bgEl.pause();
-    } catch {
-      // ignore
-    }
-    bgEl = null;
+  try {
+    bgEl.pause();
+  } catch {
+    // ignore
   }
 }
 
 /** Play voiced cues in order. `onIndex(i)` advances captions; `onIndex(-1)` signals done. */
-export function playCues(cues: Array<{ audioUrl: string | null; durationMs: number }>, onIndex: (index: number) => void): void {
+export function playCues(cues: Array<{ audioUrl: string | null; durationMs: number; songId?: string; snippetStartS?: number; snippetLenS?: number }>, onIndex: (index: number) => void): void {
   stopVoice();
   const token = { cancelled: false };
   cueChain = token;
@@ -179,13 +186,28 @@ export function playCues(cues: Array<{ audioUrl: string | null; durationMs: numb
       next();
     };
     if (cue.audioUrl !== null && unlocked) {
-      const el = new Audio(cue.audioUrl);
+      const el = voiceEl;
+      el.src = cue.audioUrl;
       el.volume = 1;
-      voiceEl = el;
-      el.addEventListener("ended", advance, { once: true });
-      el.addEventListener("error", () => window.setTimeout(advance, 400), { once: true });
+      el.onended = advance;
+      el.onerror = () => window.setTimeout(advance, 400);
+      el.load();
       void el.play().catch(() => window.setTimeout(advance, cue.durationMs));
+
+      // Play the background song snippet concurrently if present
+      if (cue.songId) {
+        const snippetUrl = "/audio/" + cue.songId;
+        const snippetStart = cue.snippetStartS ?? 30;
+        const snippetDuration = Math.max(3, cue.durationMs / 1000);
+        playSnippet(snippetUrl, snippetStart, snippetDuration, 0.15);
+      }
     } else {
+      if (cue.songId && unlocked) {
+        const snippetUrl = "/audio/" + cue.songId;
+        const snippetStart = cue.snippetStartS ?? 30;
+        const snippetDuration = Math.max(3, cue.durationMs / 1000);
+        playSnippet(snippetUrl, snippetStart, snippetDuration, 0.15);
+      }
       window.setTimeout(advance, cue.durationMs);
     }
   };
@@ -196,6 +218,7 @@ export function stopCues(): void {
   if (cueChain !== null) cueChain.cancelled = true;
   cueChain = null;
   stopVoice();
+  stopSnippet();
 }
 
 interface Tone {
@@ -242,17 +265,17 @@ export type SfxName = keyof typeof SFX | "times-up";
 export function playSfx(name: SfxName): void {
   if (!unlocked) return;
   if (name === "correct") {
-    const el = new Audio("/effects/correct.mp3");
-    el.volume = 0.8;
-    void el.play().catch(() => undefined);
+    sfxCorrectEl.currentTime = 0;
+    sfxCorrectEl.volume = 0.8;
+    void sfxCorrectEl.play().catch(() => undefined);
   } else if (name === "wrong") {
-    const el = new Audio("/effects/incorrect.mp3");
-    el.volume = 0.8;
-    void el.play().catch(() => undefined);
+    sfxIncorrectEl.currentTime = 0;
+    sfxIncorrectEl.volume = 0.8;
+    void sfxIncorrectEl.play().catch(() => undefined);
   } else if (name === "times-up") {
-    const el = new Audio("/effects/times-up.mp3");
-    el.volume = 0.8;
-    void el.play().catch(() => undefined);
+    sfxTimesUpEl.currentTime = 0;
+    sfxTimesUpEl.volume = 0.8;
+    void sfxTimesUpEl.play().catch(() => undefined);
   } else {
     const context = getCtx();
     if (context.state !== "running") return;

@@ -129,15 +129,21 @@ function getWavDurationMs(buffer: Buffer): number {
 }
 
 export function cleanDialogText(text: string): string {
-  return text
-    .replace(/\[\/emphasis\]/giu, "")
+  const cleaned = text.replace(/\[([^\]]*)\]/giu, (match, p1) => {
+    const inner = p1.trim().toLowerCase();
+    if (inner === "emphasis" || inner === "/emphasis") {
+      return match;
+    }
+    return "";
+  });
+  return cleaned
     .replace(/\s+/gu, " ")
     .trim();
 }
 
 export function stripEmphasis(text: string): string {
   return text
-    .replace(/\[\/?emphasis\]/giu, "")
+    .replace(/\[[^\]]*\]/giu, "")
     .replace(/\s+/gu, " ")
     .trim();
 }
