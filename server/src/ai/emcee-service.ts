@@ -177,7 +177,7 @@ export class EmceeService {
     }
 
     instructions.push(
-      `Explain how steals work: if the active team gets a card wrong, the opposing team can spend a steal token to place the card on their own timeline. If they are correct, they steal the card! Only one steal attempt is allowed per turn.`,
+      `Explain how steals work: if an opposing team spends a steal token to challenge *before* the active team submits their guess, and the active team's guess is wrong, the card is tested against the stealer's guessed slot. If the stealer is correct, their team steals the card! Only one steal attempt is allowed per turn.`,
       `Explain tiebreaking: because turns are sequential, the first team to reach ${targetSongs} wins immediately. If there is a tie, we keep playing until a team scores the winning point.`
     );
 
@@ -271,7 +271,7 @@ function fallbackLine(context: EmceeContext): string {
 
 function fallbackIntroLine(teamNames: string[], targetSongs: number, nextPlayerName: string | null): string {
   const handoff = nextPlayerName ? ` First up is ${nextPlayerName}!` : "";
-  return `Welcome to Songster! We have team ${teamNames.join(" and ")} ready to compete. Listen to the song snippets, place them chronologically, and be the first to reach ${targetSongs} songs to win!${handoff} Let's get ready to play!`;
+  return `Welcome to Songster! We have team ${teamNames.join(" and ")} ready to compete. Listen to the song snippets and place them chronologically. The first team to reach ${targetSongs} wins. Remember: you can spend a steal token to challenge before the other team guesses; if their guess is wrong and yours is correct, you steal the card!${handoff} Let's get ready to play!`;
 }
 
 export const emceeService = new EmceeService();

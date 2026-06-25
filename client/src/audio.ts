@@ -237,15 +237,29 @@ const SFX = {
   ],
 } satisfies Record<string, Tone[]>;
 
-export type SfxName = keyof typeof SFX;
+export type SfxName = keyof typeof SFX | "times-up";
 
 export function playSfx(name: SfxName): void {
   if (!unlocked) return;
-  const context = getCtx();
-  if (context.state !== "running") return;
-  const now = context.currentTime + 0.01;
-  for (const tone of SFX[name]) {
-    scheduleTone(context, now + (tone.o ?? 0), tone);
+  if (name === "correct") {
+    const el = new Audio("/effects/correct.mp3");
+    el.volume = 0.8;
+    void el.play().catch(() => undefined);
+  } else if (name === "wrong") {
+    const el = new Audio("/effects/incorrect.mp3");
+    el.volume = 0.8;
+    void el.play().catch(() => undefined);
+  } else if (name === "times-up") {
+    const el = new Audio("/effects/times-up.mp3");
+    el.volume = 0.8;
+    void el.play().catch(() => undefined);
+  } else {
+    const context = getCtx();
+    if (context.state !== "running") return;
+    const now = context.currentTime + 0.01;
+    for (const tone of SFX[name as keyof typeof SFX]) {
+      scheduleTone(context, now + (tone.o ?? 0), tone);
+    }
   }
 }
 

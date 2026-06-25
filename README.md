@@ -106,6 +106,9 @@ If AI services are down, the game automatically degrades gracefully to text-only
 - Old session need to expire eventually
 - the initial songster intro narration with cut off a second early
 
+- pausing the game doesn't always pause the game. Also I paused and resumed during a bot guess and it never resumed.  allow more players to join even after a game started.  
+- preparing the game music.
+
 FAILURE LOG -last dialog heard was: "You missed it again, Eric!..."
 server dev: {"level":30,"time":1782224817510,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"You missed it again, Eric! This 2003 track is \"Mr. Brightside,\" and with both teams tied at zero, we're starting over.","msg":"emcee line scripted"}
 server dev: {"level":30,"time":1782224822678,"pid":39788,"hostname":"MacBook-Pro-2025.local","characterName":"Barbara","durationMs":8220,"audioUrl":"/reveal-audio/reveal-wrong-2003-Mr-Brightside-Jacques-Lu-Cont--0-e57988d77e53f856.wav","msg":"generated reveal voice clip"}

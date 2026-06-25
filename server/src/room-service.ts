@@ -119,6 +119,7 @@ interface ActiveTurn {
    * the suspense floor), so the visual flip syncs with "Correct, Red!".
    */
   pendingResult: TurnResultView | null;
+  botTimer?: ReturnType<typeof setTimeout> | null;
 }
 
 interface GameHistoryEntry {
@@ -277,7 +278,9 @@ export class RoomManager {
       return { ok: true, room, player: existing };
     }
 
-    if (room.status !== "lobby") return { ok: false, error: "This game has already started." };
+    if (room.status !== "lobby" && room.status !== "playing") {
+      return { ok: false, error: "This game is not active." };
+    }
 
     const player: Player = {
       id: randomUUID().slice(0, 8),
@@ -287,7 +290,7 @@ export class RoomManager {
       connected: true,
       joinedAt: Date.now(),
       isBot: false,
-      tokens: 0,
+      tokens: room.status === "playing" ? room.config.tokensPerPlayer : 0,
     };
     room.players.set(player.id, player);
     return { ok: true, room, player };
@@ -713,6 +716,10 @@ export class RoomManager {
       active.placeTimer = null;
     }
     active.placeDeadline = null;
+    if (active.botTimer) {
+      clearTimeout(active.botTimer);
+      active.botTimer = null;
+    }
   }
 
   /** Time's up: resolve at index 0 (a guess is a guess). */
@@ -724,7 +731,7 @@ export class RoomManager {
     // Pick the placer's leftmost-suggested gap if any teammate suggested, else 0.
     const suggestions = [...game.active.suggestions.values()];
     const fallbackIndex = suggestions.length > 0 ? suggestions[0]!.index : 0;
-    this.resolvePlacement(room, placerId, fallbackIndex);
+    this.resolvePlacement(room, placerId, fallbackIndex, true);
   }
 
   /** Any player can re-play the snippet on the hub, once the current play finishes. */
@@ -763,7 +770,7 @@ export class RoomManager {
     return room;
   }
 
-  private resolvePlacement(room: Room, playerId: string, index: number): Room {
+  private resolvePlacement(room: Room, playerId: string, index: number, timeout?: boolean): Room {
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
     if (game.active.placerId !== playerId) return room;
@@ -823,6 +830,7 @@ export class RoomManager {
       placedIndex: slot,
       song: { songId: song.songId, year: song.year, title: song.title, artist: song.artist, hasArt: song.hasArt },
       steal: stealResult,
+      timeout,
     };
     game.active.pendingResult = pendingResult;
     game.active.phase = "suspense";
@@ -1085,6 +1093,12 @@ export class RoomManager {
     const drumrolled = Date.now() - placedAt;
     if (drumrolled < SUSPENSE_FLOOR_MS) await delay(SUSPENSE_FLOOR_MS - drumrolled);
 
+    // If the game is paused, wait here until it resumes
+    while (game.paused) {
+      await delay(100);
+      if (room.game === null || room.game.active === null || room.game.turnCounter !== turnId) return;
+    }
+
     if (game.active === null || game.turnCounter !== turnId || game.active.phase !== "suspense") return;
 
     const clip = game.active.emceeClip;
@@ -1100,6 +1114,7 @@ export class RoomManager {
       game.revealDeadline = Date.now() + delayVal;
       game.revealTimer = setTimeout(() => {
         if (room.game !== null) {
+          if (room.game.turnCounter !== turnId) return;
           room.game.revealDeadline = null;
           room.game.revealTimer = null;
           if (room.game.winnerTeamId !== null) {
@@ -1121,6 +1136,7 @@ export class RoomManager {
     game.revealDeadline = Date.now() + delayVal;
     game.revealTimer = setTimeout(() => {
       if (room.game !== null) {
+        if (room.game.turnCounter !== turnId) return;
         room.game.revealDeadline = null;
         room.game.revealTimer = null;
         if (room.game.winnerTeamId !== null) {
@@ -1148,9 +1164,17 @@ export class RoomManager {
       // Extend the timer so the late voice gets to finish.
       if (room.game.revealTimer !== null) clearTimeout(room.game.revealTimer);
       const lateDelayVal = Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800);
+      if (room.game.paused) {
+        room.game.pauseRemainingMs = lateDelayVal;
+        room.game.revealDeadline = null;
+        room.game.revealTimer = null;
+        logger.info({ code: room.code, turnId }, "emcee: late voice arrived while paused; stashed remainingMs");
+        return;
+      }
       room.game.revealDeadline = Date.now() + lateDelayVal;
       room.game.revealTimer = setTimeout(() => {
         if (room.game !== null) {
+          if (room.game.turnCounter !== turnId) return;
           room.game.revealDeadline = null;
           room.game.revealTimer = null;
           if (room.game.winnerTeamId !== null) {
@@ -1206,6 +1230,12 @@ export class RoomManager {
 
     if (game.turnCounter !== turnId) return;
 
+    // If the game is paused, wait here until it resumes
+    while (game.paused) {
+      await delay(100);
+      if (room.game === null || room.game.turnCounter !== turnId) return;
+    }
+
     if (view === null) {
       // Fall back to the single emcee line (also outcome-aware) — that path
       // owns its own suspense floor, so it'll still land in sync.
@@ -1228,10 +1258,11 @@ export class RoomManager {
       game.revealDeadline = Date.now() + delayVal;
       game.revealTimer = setTimeout(() => {
         if (room.game !== null) {
+          if (room.game.turnCounter !== turnId) return;
           room.game.revealDeadline = null;
           room.game.revealTimer = null;
+          this.advanceTurn(room);
         }
-        this.advanceTurn(room);
       }, delayVal);
     } else {
       // Finale: the winner screen now takes over (game.winnerTeamId was
@@ -1370,7 +1401,7 @@ export class RoomManager {
 
     if (placer.isBot) {
       const turnId = game.turnCounter;
-      setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
+      game.active.botTimer = setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
     }
   }
 
@@ -1567,6 +1598,11 @@ export class RoomManager {
         game.active.placeDeadline = null;
       }
     }
+ 
+    if (game.active !== null && game.active.botTimer) {
+      clearTimeout(game.active.botTimer);
+      game.active.botTimer = null;
+    }
 
     logger.info({ code: room.code, remainingMs: game.pauseRemainingMs }, "game paused");
     this.hooks.broadcast(room.code);
@@ -1599,8 +1635,10 @@ export class RoomManager {
     // 2. Was it in reveal timer phase?
     else if (game.active !== null && game.active.phase === "revealing" && remainingMs > 0) {
       game.revealDeadline = Date.now() + remainingMs;
+      const turnId = game.turnCounter;
       game.revealTimer = setTimeout(() => {
         if (room.game !== null) {
+          if (room.game.turnCounter !== turnId) return;
           room.game.revealTimer = null;
           room.game.revealDeadline = null;
           if (room.game.winnerTeamId !== null) {
@@ -1616,12 +1654,31 @@ export class RoomManager {
       const turnId = game.turnCounter;
       game.active.placeDeadline = Date.now() + remainingMs;
       game.active.placeTimer = setTimeout(() => this.autoResolveTurn(room, turnId), remainingMs);
+      
+      const placer = room.players.get(game.active.placerId);
+      if (placer?.isBot) {
+        game.active.botTimer = setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
+      }
+ 
+      const lenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
+      game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
+      this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS: game.active.song.snippetStartS, lenS });
     } else {
       // Fallback
       if (game.active === null) {
         this.beginTurn(room);
       } else if (game.active.phase === "placing") {
         this.armPlaceTimer(room);
+        
+        const placer = room.players.get(game.active.placerId);
+        if (placer?.isBot) {
+          const turnId = game.turnCounter;
+          game.active.botTimer = setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
+        }
+ 
+        const lenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
+        game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
+        this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS: game.active.song.snippetStartS, lenS });
       }
     }
 

@@ -67,6 +67,7 @@ export interface TurnResultView {
   song: RevealedSong;
   /** A Steal resolution, when an opponent challenged this turn. */
   steal: StealResultView | null;
+  timeout?: boolean;
 }
 
 export interface GameView {

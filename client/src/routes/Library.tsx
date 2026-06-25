@@ -50,6 +50,7 @@ export function Library() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [scanResult, setScanResult] = useState<ScanSummary | null>(null);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   // Local library advanced search states
   const [localShowAdvanced, setLocalShowAdvanced] = useState(false);
@@ -367,9 +368,7 @@ export function Library() {
       <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-indigo-500/5 blur-[100px] pointer-events-none" />
       <div className="absolute top-[30%] right-[-10%] h-[50%] w-[50%] rounded-full bg-purple-600/5 blur-[100px] pointer-events-none" />
 
-      <audio ref={audioRef} onEnded={stopPreview} className="hidden" />
-
-      <header className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur-md px-6 py-4 shadow-md">
+      <audio ref={audioRef} onEnded={stopPreview} className="hidden" />      <header className="relative sm:sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur-md px-4 py-4 sm:px-6 shadow-md">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <h1 className="text-2xl font-black tracking-tight font-heading text-transparent bg-clip-text bg-gradient-to-r from-indigo-200 to-indigo-400">🎵 Songster · Library</h1>
           {stats !== null && <StatBar stats={stats} />}
@@ -412,6 +411,7 @@ export function Library() {
             onClick={() => {
               setActiveTab("library");
               stopPreview();
+              setShowMobileFilters(false);
             }}
             className={`pb-2 text-sm font-bold border-b-2 transition ${
               activeTab === "library"
@@ -426,6 +426,7 @@ export function Library() {
             onClick={() => {
               setActiveTab("plex");
               stopPreview();
+              setShowMobileFilters(false);
             }}
             className={`pb-2 text-sm font-bold border-b-2 transition ${
               activeTab === "plex"
@@ -438,138 +439,181 @@ export function Library() {
         </div>
 
         {/* Game Library Filters */}
-        <div className={activeTab === "library" ? "mt-4 flex flex-wrap items-center gap-2 text-sm" : "hidden"}>
-          <Segmented<StatusFilter>
-            value={status}
-            onChange={setStatus}
-            options={[
-              ["all", "All Statuses"],
-              ["unreviewed", "Unreviewed"],
-              ["approved", "Approved"],
-              ["excluded", "Excluded"],
-            ]}
-          />
-          
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value as any)}
-            className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-400 outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="all">All Sources</option>
-            <option value="local">📁 Local Only</option>
-            <option value="plex">🔌 Plex Only</option>
-          </select>
+        <div className={activeTab === "library" ? "mt-4 flex flex-col gap-3" : "hidden"}>
+          <div className="flex gap-2 w-full">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search title / artist / album…"
+              className="min-w-0 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              className={`md:hidden rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                showMobileFilters
+                  ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
+                  : "border-white/10 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              Filter ({[
+                status !== "all" ? 1 : 0,
+                sourceFilter !== "all" ? 1 : 0,
+                flaggedOnly ? 1 : 0,
+                genreFilter ? 1 : 0,
+                tagFilter ? 1 : 0,
+                sort !== "flagged" ? 1 : 0
+              ].reduce((a, b) => a + b, 0)})
+            </button>
+          </div>
 
-          <label className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 cursor-pointer hover:border-slate-800 hover:bg-slate-900 transition">
-            <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
-            <span className="font-semibold text-slate-400">Flagged only</span>
-          </label>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search title / artist / album…"
-            className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
-          />
-          <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
-          <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-300 outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="flagged">Sort: needs review</option>
-            <option value="title">Sort: title</option>
-            <option value="artist">Sort: artist</option>
-            <option value="year">Sort: year</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => setLocalShowAdvanced(!localShowAdvanced)}
-            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-              localShowAdvanced
-                ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
-                : "border-white/10 bg-slate-900 text-slate-300 hover:bg-slate-800"
-            }`}
-          >
-            ⚙️ Advanced
-          </button>
-          <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
+          <div className={`flex-wrap items-center gap-2 text-sm ${showMobileFilters ? "flex" : "hidden md:flex"}`}>
+            <Segmented<StatusFilter>
+              value={status}
+              onChange={setStatus}
+              options={[
+                ["all", "All Statuses"],
+                ["unreviewed", "Unreviewed"],
+                ["approved", "Approved"],
+                ["excluded", "Excluded"],
+              ]}
+            />
+            
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value as any)}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-400 outline-none focus:border-indigo-500 transition cursor-pointer text-sm"
+            >
+              <option value="all">All Sources</option>
+              <option value="local">📁 Local Only</option>
+              <option value="plex">🔌 Plex Only</option>
+            </select>
+
+            <label className="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 cursor-pointer hover:border-slate-800 hover:bg-slate-900 transition text-sm">
+              <input type="checkbox" checked={flaggedOnly} onChange={(e) => setFlaggedOnly(e.target.checked)} className="rounded text-indigo-600 focus:ring-0" />
+              <span className="font-semibold text-slate-400">Flagged only</span>
+            </label>
+            
+            <FacetSelect label="Genre" value={genreFilter} onChange={setGenreFilter} options={facets?.genres ?? []} />
+            <FacetSelect label="Tag" value={tagFilter} onChange={setTagFilter} options={facets?.tags ?? []} />
+            
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-300 outline-none focus:border-indigo-500 transition cursor-pointer text-sm"
+            >
+              <option value="flagged">Sort: needs review</option>
+              <option value="title">Sort: title</option>
+              <option value="artist">Sort: artist</option>
+              <option value="year">Sort: year</option>
+            </select>
+            
+            <button
+              type="button"
+              onClick={() => setLocalShowAdvanced(!localShowAdvanced)}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                localShowAdvanced
+                  ? "border-indigo-500 bg-indigo-600/20 text-indigo-300"
+                  : "border-white/10 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              ⚙️ Advanced
+            </button>
+            <span className="text-xs uppercase font-bold tracking-wider text-slate-500 pl-1">{loading ? "loading…" : `${songs.length} shown`}</span>
+          </div>
         </div>
 
         {/* Plex Server Browser Search Form */}
-        <form
-          onSubmit={handlePlexSearchSubmit}
-          className={activeTab === "plex" ? "mt-4 flex flex-wrap items-center gap-2 text-sm" : "hidden"}
-        >
-          <input
-            value={plexSearch}
-            onChange={(e) => {
-              setPlexSearch(e.target.value);
-              plexSearchRef.current = e.target.value;
-            }}
-            placeholder="Search Plex by title / artist / album…"
-            className="min-w-64 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner"
-          />
-          <button
-            type="submit"
-            className="rounded-xl bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 transition cursor-pointer"
+        <div className={activeTab === "plex" ? "mt-4 flex flex-col gap-3" : "hidden"}>
+          <form
+            onSubmit={handlePlexSearchSubmit}
+            className="flex gap-2 w-full"
           >
-            Search
-          </button>
-          <button
-            type="button"
-            onClick={() => setPlexShowAdvanced(!plexShowAdvanced)}
-            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-              plexShowAdvanced
-                ? "border-amber-500 bg-amber-600/20 text-amber-300"
-                : "border-white/10 bg-slate-900 text-slate-400 hover:bg-slate-800"
-            }`}
-          >
-            ⚙️ Advanced
-          </button>
-          <select
-            value={plexSort}
-            onChange={(e) => {
-              const val = e.target.value;
-              setPlexSort(val);
-              plexSortRef.current = val;
-              void loadPlexSongs(0);
-            }}
-            className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-400 outline-none focus:border-indigo-500 transition cursor-pointer"
-          >
-            <option value="titleSort">Sort: Title (A-Z)</option>
-            <option value="artist.titleSort,album.titleSort,track.index">Sort: Artist (A-Z)</option>
-            <option value="album.titleSort,track.index">Sort: Album (A-Z)</option>
-            <option value="year:desc">Sort: Year (Newest)</option>
-            <option value="year">Sort: Year (Oldest)</option>
-            <option value="addedAt:desc">Sort: Date Added</option>
-          </select>
+            <input
+              value={plexSearch}
+              onChange={(e) => {
+                setPlexSearch(e.target.value);
+                plexSearchRef.current = e.target.value;
+              }}
+              placeholder="Search Plex by title / artist / album…"
+              className="min-w-0 flex-1 rounded-xl border border-white/5 bg-slate-900/60 px-4 py-2 outline-none focus:border-indigo-500 focus:bg-slate-900 transition text-slate-100 shadow-inner text-sm"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-500 transition cursor-pointer text-sm"
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              className={`md:hidden rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                showMobileFilters
+                  ? "border-amber-500 bg-amber-600/20 text-amber-300"
+                  : "border-white/10 bg-slate-900 text-slate-300 hover:bg-slate-800"
+              }`}
+            >
+              Filter
+            </button>
+          </form>
 
-          {/* Pagination Controls */}
-          {plexTotalSize > 0 && (
-            <div className="flex items-center gap-2 ml-auto">
-              <button
-                type="button"
-                disabled={plexStart === 0 || plexLoading}
-                onClick={() => loadPlexSongs(Math.max(0, plexStart - plexPageSize))}
-                className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
-              >
-                ◀ Prev
-              </button>
-              <span className="text-xs text-slate-400 font-semibold">
-                {plexStart + 1} - {Math.min(plexStart + plexPageSize, plexTotalSize)} of {plexTotalSize}
-              </span>
-              <button
-                type="button"
-                disabled={plexStart + plexPageSize >= plexTotalSize || plexLoading}
-                onClick={() => loadPlexSongs(plexStart + plexPageSize)}
-                className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
-              >
-                Next ▶
-              </button>
-            </div>
-          )}
-        </form>
+          <div className={`flex-wrap items-center gap-2 text-sm ${showMobileFilters ? "flex" : "hidden md:flex"}`}>
+            <button
+              type="button"
+              onClick={() => setPlexShowAdvanced(!plexShowAdvanced)}
+              className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                plexShowAdvanced
+                  ? "border-amber-500 bg-amber-600/20 text-amber-300"
+                  : "border-white/10 bg-slate-900 text-slate-400 hover:bg-slate-800"
+              }`}
+            >
+              ⚙️ Advanced
+            </button>
+            
+            <select
+              value={plexSort}
+              onChange={(e) => {
+                const val = e.target.value;
+                setPlexSort(val);
+                plexSortRef.current = val;
+                void loadPlexSongs(0);
+              }}
+              className="rounded-xl border border-white/5 bg-slate-900/60 px-3 py-2 font-semibold text-slate-400 outline-none focus:border-indigo-500 transition cursor-pointer text-sm"
+            >
+              <option value="titleSort">Sort: Title (A-Z)</option>
+              <option value="artist.titleSort,album.titleSort,track.index">Sort: Artist (A-Z)</option>
+              <option value="album.titleSort,track.index">Sort: Album (A-Z)</option>
+              <option value="year:desc">Sort: Year (Newest)</option>
+              <option value="year">Sort: Year (Oldest)</option>
+              <option value="addedAt:desc">Sort: Date Added</option>
+            </select>
+
+            {/* Pagination Controls */}
+            {plexTotalSize > 0 && (
+              <div className="flex items-center gap-2 md:ml-auto">
+                <button
+                  type="button"
+                  disabled={plexStart === 0 || plexLoading}
+                  onClick={() => loadPlexSongs(Math.max(0, plexStart - plexPageSize))}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  ◀ Prev
+                </button>
+                <span className="text-xs text-slate-400 font-semibold">
+                  {plexStart + 1} - {Math.min(plexStart + plexPageSize, plexTotalSize)} of {plexTotalSize}
+                </span>
+                <button
+                  type="button"
+                  disabled={plexStart + plexPageSize >= plexTotalSize || plexLoading}
+                  onClick={() => loadPlexSongs(plexStart + plexPageSize)}
+                  className="rounded-xl border border-white/10 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+                >
+                  Next ▶
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Local library advanced search panel */}
         <div
@@ -1044,7 +1088,7 @@ function SongRow(props: {
         : "border-l-slate-700";
 
   return (
-    <div className={`group grid grid-cols-[3rem_1fr_auto] gap-3 border-l-4 ${statusTint} py-3 pl-3 pr-1`}>
+    <div className={`group grid grid-cols-[3rem_1fr] md:grid-cols-[3rem_1fr_auto] gap-x-3 gap-y-2.5 md:gap-y-0 border-l-4 ${statusTint} py-3 pl-3 pr-2`}>
       <div className="relative h-12 w-12 shrink-0">
         <button
           type="button"
@@ -1184,14 +1228,42 @@ function SongRow(props: {
         </div>
       </div>
 
-      <div className="flex items-start gap-2">
-        <label className="flex flex-col items-center text-[10px] uppercase text-slate-500">
-          Year
-          <div className="flex items-center gap-1">
+      <div className="col-span-2 md:col-span-1 flex flex-col sm:flex-row gap-2.5 w-full md:w-auto items-stretch sm:items-start">
+        <div className="flex gap-2 justify-start sm:justify-normal">
+          <label className="flex flex-col items-center text-[10px] uppercase text-slate-500">
+            Year
+            <div className="flex items-center gap-1">
+              <input
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                onBlur={commitYear}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.currentTarget.blur();
+                  }
+                }}
+                inputMode="numeric"
+                placeholder="—"
+                className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-indigo-500"
+              />
+              {song.year && (
+                <button
+                  type="button"
+                  onClick={() => onPivot("year", song.year!)}
+                  title={`Find other tracks from ${song.year}`}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-500 hover:text-indigo-400 p-0.5 transition cursor-pointer"
+                >
+                  🔍
+                </button>
+              )}
+            </div>
+          </label>
+          <label className="flex flex-col items-center text-[10px] uppercase text-slate-500">
+            Start s
             <input
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              onBlur={commitYear}
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              onBlur={commitStart}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.currentTarget.blur();
@@ -1199,44 +1271,18 @@ function SongRow(props: {
               }}
               inputMode="numeric"
               placeholder="—"
-              className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm text-slate-100 outline-none focus:border-indigo-500"
+              className="w-14 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm outline-none focus:border-indigo-500"
             />
-            {song.year && (
-              <button
-                type="button"
-                onClick={() => onPivot("year", song.year!)}
-                title={`Find other tracks from ${song.year}`}
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-500 hover:text-indigo-400 p-0.5 transition cursor-pointer"
-              >
-                🔍
-              </button>
-            )}
-          </div>
-        </label>
-        <label className="flex flex-col items-center text-[10px] uppercase text-slate-500">
-          Start s
-          <input
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            onBlur={commitStart}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.currentTarget.blur();
-              }
-            }}
-            inputMode="numeric"
-            placeholder="—"
-            className="w-14 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-center text-sm outline-none focus:border-indigo-500"
-          />
-        </label>
-        <div className="flex flex-col gap-1 self-stretch">
+          </label>
+        </div>
+        <div className="flex flex-col gap-1 flex-1">
           <div className="flex gap-1">
             <button
               type="button"
               onClick={requestSuggestion}
               disabled={!aiAvailable || suggesting}
               title={aiAvailable ? "Ask the local LLM for the original year" : "Ollama unavailable"}
-              className="flex-1 rounded border border-indigo-700 px-2 py-1 text-xs font-medium text-indigo-200 hover:bg-indigo-900/40 disabled:opacity-40"
+              className="flex-1 sm:flex-none rounded border border-indigo-700 px-2 py-1 text-xs font-medium text-indigo-200 hover:bg-indigo-900/40 disabled:opacity-40"
             >
               {suggesting ? "…" : "Suggest"}
             </button>
@@ -1244,7 +1290,7 @@ function SongRow(props: {
               type="button"
               onClick={onWebLookup}
               title="Search public web resources (iTunes) for year and artwork"
-              className="flex-1 rounded border border-indigo-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-indigo-300 hover:bg-indigo-900/40 cursor-pointer"
+              className="flex-1 sm:flex-none rounded border border-indigo-700/80 bg-slate-900 px-2 py-1 text-xs font-medium text-indigo-300 hover:bg-indigo-900/40 cursor-pointer"
             >
               🌐 Lookup
             </button>
@@ -1267,7 +1313,7 @@ function SongRow(props: {
                 void onPatch(update);
               }}
               disabled={busy}
-              className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold hover:bg-emerald-500 disabled:opacity-50"
+              className="flex-1 sm:flex-none rounded bg-emerald-600 px-2 py-1 text-xs font-semibold hover:bg-emerald-500 disabled:opacity-50"
             >
               Approve
             </button>
@@ -1288,7 +1334,7 @@ function SongRow(props: {
                 void onPatch(update);
               }}
               disabled={busy}
-              className="rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
+              className="flex-1 sm:flex-none rounded border border-slate-700 px-2 py-1 text-xs hover:bg-slate-800 disabled:opacity-50"
             >
               Exclude
             </button>
@@ -1300,7 +1346,7 @@ function SongRow(props: {
                 }
               }}
               disabled={busy}
-              className="rounded bg-rose-700 hover:bg-rose-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
+              className="flex-1 sm:flex-none rounded bg-rose-700 hover:bg-rose-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
             >
               Delete
             </button>
@@ -1338,7 +1384,7 @@ function PlexTrackRow(props: {
     : "—";
 
   return (
-    <div className="grid grid-cols-[3rem_1fr_auto] gap-3 py-4 pl-3 pr-1 border-l-4 border-l-slate-800">
+    <div className="grid grid-cols-[3rem_1fr] md:grid-cols-[3rem_1fr_auto] gap-x-3 gap-y-2 md:gap-y-0 py-4 pl-3 pr-2 border-l-4 border-l-slate-800">
       <div className="relative h-12 w-12 shrink-0">
         <button
           type="button"
@@ -1417,7 +1463,7 @@ function PlexTrackRow(props: {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="col-span-2 md:col-span-1 flex items-center justify-between md:justify-end gap-2 mt-1 md:mt-0 pl-[3.75rem] md:pl-0">
         {track.isImported && (
           <span className="text-xs text-slate-500 italic pr-1 font-medium">✓ In game</span>
         )}
@@ -1797,7 +1843,7 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
           </button>
         </div>
 
-        <form onSubmit={handleSearch} className="p-4 bg-slate-900/60 border-b border-slate-800 flex flex-wrap gap-3 items-end">
+        <form onSubmit={handleSearch} className="p-4 bg-slate-900/60 border-b border-slate-800 flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
           <div className="flex-1 min-w-[200px] flex flex-col gap-1">
             <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Title Query</label>
             <input
@@ -1819,7 +1865,7 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 px-4 py-1.5 text-sm font-semibold text-white transition h-[38px] cursor-pointer"
+            className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-800 px-4 py-1.5 text-sm font-semibold text-white transition h-[38px] cursor-pointer flex items-center justify-center"
           >
             {loading ? "Searching..." : "Search"}
           </button>
@@ -1897,80 +1943,82 @@ export function WebLookupModal({ song, onClose, onSongUpdated }: WebLookupModalP
               }
 
               return (
-                <div key={idx} className="flex gap-4 py-4 first:pt-0 last:pb-0 items-start">
-                  <div className="relative h-16 w-16 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-white/5">
-                    {result.artUrl ? (
-                      <img src={result.artUrl} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-slate-500 text-lg">♪</span>
-                    )}
-                  </div>
-                  
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-slate-100 truncate text-sm">{result.title}</div>
-                    <div className="text-xs text-slate-400 truncate mt-0.5">{result.artist}</div>
-                    <div className="text-xs text-slate-500 truncate">{result.album || "—"}</div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {result.year && (
-                        <span className="rounded bg-slate-800/80 border border-slate-700/50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-300">
-                          {result.year}
-                        </span>
+                <div key={idx} className="flex flex-col sm:flex-row gap-3 py-4 first:pt-0 last:pb-0 items-stretch sm:items-start">
+                  <div className="flex gap-3 items-start min-w-0 flex-1">
+                    <div className="relative h-16 w-16 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-white/5">
+                      {result.artUrl ? (
+                        <img src={result.artUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center text-slate-500 text-lg">♪</span>
                       )}
-                      {result.genres && result.genres.length > 0 ? (
-                        result.genres.map((g) => (
-                          <span key={g} className="rounded bg-teal-900/40 border border-teal-700/30 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
-                            {g}
-                          </span>
-                        ))
-                      ) : result.genre ? (
-                        <span className="rounded bg-teal-900/40 border border-teal-700/30 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
-                          {result.genre}
-                        </span>
-                      ) : null}
                     </div>
-
-                    {/* Per-field checkboxes */}
-                    {importableFields.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 items-center">
-                        <button
-                          type="button"
-                          onClick={() => toggleSelectAll(idx, importableFields.map(f => f.field))}
-                          className="rounded border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-300 transition cursor-pointer"
-                        >
-                          {importableFields.every(f => checked.has(f.field)) ? "Deselect All" : "Select All"}
-                        </button>
-                        {importableFields.map(({ field, label, value, isMissing }) => (
-                          <label
-                            key={field}
-                            className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1.5 py-0.5 transition ${
-                              checked.has(field)
-                                ? isMissing
-                                  ? "bg-amber-600/20 text-amber-200"
-                                  : "bg-indigo-600/20 text-indigo-200"
-                                : "text-slate-400 hover:text-slate-200"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked.has(field)}
-                              onChange={() => toggleField(idx, field)}
-                              className="rounded text-indigo-600 focus:ring-0 h-3 w-3"
-                            />
-                            <span className="font-semibold">{label}:</span>
-                            <span className="truncate max-w-[140px]">{value}</span>
-                            {isMissing && (
-                              <span className="text-[9px] font-bold text-amber-400 uppercase">fill</span>
-                            )}
-                            {!isMissing && field !== "art" && field !== "genre" && (
-                              <span className="text-[9px] font-bold text-slate-500 uppercase">override</span>
-                            )}
-                          </label>
-                        ))}
+                    
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-slate-100 truncate text-sm">{result.title}</div>
+                      <div className="text-xs text-slate-400 truncate mt-0.5">{result.artist}</div>
+                      <div className="text-xs text-slate-500 truncate">{result.album || "—"}</div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {result.year && (
+                          <span className="rounded bg-slate-800/80 border border-slate-700/50 px-1.5 py-0.5 text-[10px] font-bold text-indigo-300">
+                            {result.year}
+                          </span>
+                        )}
+                        {result.genres && result.genres.length > 0 ? (
+                          result.genres.map((g) => (
+                            <span key={g} className="rounded bg-teal-900/40 border border-teal-700/30 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
+                              {g}
+                            </span>
+                          ))
+                        ) : result.genre ? (
+                          <span className="rounded bg-teal-950 border border-teal-750 px-1.5 py-0.5 text-[10px] font-bold text-teal-300">
+                            {result.genre}
+                          </span>
+                        ) : null}
                       </div>
-                    )}
+
+                      {/* Per-field checkboxes */}
+                      {importableFields.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 items-center">
+                          <button
+                            type="button"
+                            onClick={() => toggleSelectAll(idx, importableFields.map(f => f.field))}
+                            className="rounded border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-300 transition cursor-pointer"
+                          >
+                            {importableFields.every(f => checked.has(f.field)) ? "Deselect All" : "Select All"}
+                          </button>
+                          {importableFields.map(({ field, label, value, isMissing }) => (
+                            <label
+                              key={field}
+                              className={`flex items-center gap-1.5 text-[11px] cursor-pointer rounded px-1.5 py-0.5 transition ${
+                                checked.has(field)
+                                  ? isMissing
+                                    ? "bg-amber-600/20 text-amber-200"
+                                    : "bg-indigo-600/20 text-indigo-200"
+                                  : "text-slate-400 hover:text-slate-200"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked.has(field)}
+                                onChange={() => toggleField(idx, field)}
+                                className="rounded text-indigo-600 focus:ring-0 h-3 w-3"
+                              />
+                              <span className="font-semibold">{label}:</span>
+                              <span className="truncate max-w-[140px]">{value}</span>
+                              {isMissing && (
+                                <span className="text-[9px] font-bold text-amber-400 uppercase">fill</span>
+                              )}
+                              {!isMissing && field !== "art" && field !== "genre" && (
+                                <span className="text-[9px] font-bold text-slate-500 uppercase">override</span>
+                              )}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5 shrink-0 items-end">
+                  <div className="flex flex-row sm:flex-col gap-1.5 shrink-0 justify-end sm:items-end mt-2 sm:mt-0 pl-[4.75rem] sm:pl-0">
                     <button
                       type="button"
                       disabled={isBusy || checked.size === 0}
@@ -2231,7 +2279,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
       <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/50">
+        <div className="flex items-center justify-between px-4 py-4 sm:px-6 border-b border-slate-800 bg-slate-950/50">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
               <span>🔌 Curate & Import Plex Track</span>
@@ -2287,12 +2335,12 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 overflow-y-auto min-h-0">
           
           {/* Left Column: Edit Form */}
-          <div className="p-6 flex flex-col gap-5 overflow-y-auto">
+          <div className="p-4 sm:p-6 flex flex-col gap-5 lg:overflow-y-auto overflow-y-visible">
             <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">1. Edit Metadata</h3>
             
-            <div className="flex gap-4 items-start">
+            <div className="flex flex-col sm:flex-row gap-4 items-center sm:items-start text-center sm:text-left">
               {/* Cover Artwork Preview */}
-              <div className="relative h-28 w-28 shrink-0 bg-slate-950 rounded-xl overflow-hidden border border-white/5 shadow-inner">
+              <div className="relative h-28 w-28 shrink-0 bg-slate-950 rounded-xl overflow-hidden border border-white/5 shadow-inner mx-auto sm:mx-0">
                 {selectedArtUrl ? (
                   <img src={selectedArtUrl} alt="iTunes Cover" className="h-full w-full object-cover animate-in fade-in duration-300" />
                 ) : track.thumb ? (
@@ -2306,11 +2354,11 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
                 </span>
               </div>
               
-              <div className="flex-1 flex flex-col gap-2 justify-center h-28">
+              <div className="flex-1 flex flex-col gap-2 justify-center">
                 <div className="text-xs text-slate-400 font-semibold truncate">
                   Plex Track Key: <span className="text-slate-300 font-mono text-[11px] block truncate mt-0.5">{track.key}</span>
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-wrap gap-2 items-center justify-center sm:justify-start">
                   <button
                     type="button"
                     onClick={() => onPreview(Number(startS) || 30)}
@@ -2401,10 +2449,10 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
           </div>
 
           {/* Right Column: Web Lookup */}
-          <div className="p-6 flex flex-col overflow-y-auto">
+          <div className="p-4 sm:p-6 flex flex-col lg:overflow-y-auto overflow-y-visible">
             <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">2. Search Web Metadata</h3>
             
-            <form onSubmit={handleSearchSubmit} className="flex gap-2 items-end mb-4 bg-slate-950/40 p-3 border border-slate-800 rounded-xl">
+            <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-end mb-4 bg-slate-950/40 p-3 border border-slate-800 rounded-xl">
               <div className="flex-1 flex flex-col gap-1 min-w-0">
                 <label className="text-[9px] uppercase font-bold tracking-wider text-slate-500">Title Query</label>
                 <input
@@ -2432,7 +2480,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
               </button>
             </form>
 
-            <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60 min-h-0 pr-1">
+            <div className="flex-1 lg:overflow-y-auto overflow-y-visible divide-y divide-slate-800/60 min-h-0 pr-1">
               {lookupLoading && lookupResults.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 text-xs">
                   <span className="inline-block animate-spin mr-2">⏳</span> Querying iTunes API...
@@ -2472,74 +2520,76 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
                   }
 
                   return (
-                    <div key={idx} className="flex gap-3 py-3 first:pt-0 last:pb-0 items-start">
-                      <div className="relative h-12 w-12 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-white/5">
-                        {result.artUrl ? (
-                          <img src={result.artUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <span className="flex h-full w-full items-center justify-center text-slate-500">♪</span>
-                        )}
-                      </div>
-                      
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-slate-100 truncate text-xs">{result.title}</div>
-                        <div className="text-[11px] text-slate-400 truncate">{result.artist}</div>
-                        <div className="text-[10px] text-slate-500 truncate">{result.album || "—"}</div>
-                        
-                        <div className="flex gap-1 mt-0.5">
-                          {result.year && (
-                            <span className="rounded bg-slate-800 px-1 py-0.25 text-[9px] font-bold text-indigo-300">{result.year}</span>
+                    <div key={idx} className="flex flex-col sm:flex-row gap-3 py-3 first:pt-0 last:pb-0 items-stretch sm:items-start">
+                      <div className="flex gap-3 items-start min-w-0 flex-1">
+                        <div className="relative h-12 w-12 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-white/5">
+                          {result.artUrl ? (
+                            <img src={result.artUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-slate-500">♪</span>
                           )}
-                          {result.genres && result.genres.length > 0 ? (
-                            result.genres.map((g) => (
-                              <span key={g} className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{g}</span>
-                            ))
-                          ) : result.genre ? (
-                            <span className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{result.genre}</span>
-                          ) : null}
                         </div>
-
-                        {/* Checkboxes */}
-                        {diffFields.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1 items-center">
-                            <button
-                              type="button"
-                              onClick={() => toggleSelectAll(idx, diffFields.map(f => f.field))}
-                              className="rounded border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-1 py-0.25 text-[9px] font-bold text-indigo-300 transition cursor-pointer"
-                            >
-                              {diffFields.every(f => checked.has(f.field)) ? "Deselect All" : "Select All"}
-                            </button>
-                            {diffFields.map(({ field, label, value, isMissing }) => (
-                              <label
-                                key={field}
-                                className={`flex items-center gap-1 text-[10px] cursor-pointer rounded px-1 py-0.25 transition ${
-                                  checked.has(field)
-                                    ? isMissing
-                                      ? "bg-amber-600/20 text-amber-200"
-                                      : "bg-indigo-600/20 text-indigo-200"
-                                    : "text-slate-400 hover:text-slate-200"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked.has(field)}
-                                  onChange={() => toggleField(idx, field)}
-                                  className="rounded text-indigo-600 focus:ring-0 h-2.5 w-2.5"
-                                />
-                                <span className="font-semibold">{label}:</span>
-                                <span className="truncate max-w-[100px]">{value}</span>
-                              </label>
-                            ))}
+                        
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-slate-100 truncate text-xs">{result.title}</div>
+                          <div className="text-[11px] text-slate-400 truncate">{result.artist}</div>
+                          <div className="text-[10px] text-slate-500 truncate">{result.album || "—"}</div>
+                          
+                          <div className="flex gap-1 mt-0.5">
+                            {result.year && (
+                              <span className="rounded bg-slate-800 px-1 py-0.25 text-[9px] font-bold text-indigo-300">{result.year}</span>
+                            )}
+                            {result.genres && result.genres.length > 0 ? (
+                              result.genres.map((g) => (
+                                <span key={g} className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{g}</span>
+                              ))
+                            ) : result.genre ? (
+                              <span className="rounded bg-teal-900/40 px-1 py-0.25 text-[9px] font-bold text-teal-300">{result.genre}</span>
+                            ) : null}
                           </div>
-                        )}
+
+                          {/* Checkboxes */}
+                          {diffFields.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1 items-center">
+                              <button
+                                type="button"
+                                onClick={() => toggleSelectAll(idx, diffFields.map(f => f.field))}
+                                className="rounded border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 px-1 py-0.25 text-[9px] font-bold text-indigo-300 transition cursor-pointer"
+                              >
+                                {diffFields.every(f => checked.has(f.field)) ? "Deselect All" : "Select All"}
+                              </button>
+                              {diffFields.map(({ field, label, value, isMissing }) => (
+                                <label
+                                  key={field}
+                                  className={`flex items-center gap-1 text-[10px] cursor-pointer rounded px-1 py-0.25 transition ${
+                                    checked.has(field)
+                                      ? isMissing
+                                        ? "bg-amber-600/20 text-amber-200"
+                                        : "bg-indigo-600/20 text-indigo-200"
+                                      : "text-slate-400 hover:text-slate-200"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked.has(field)}
+                                    onChange={() => toggleField(idx, field)}
+                                    className="rounded text-indigo-600 focus:ring-0 h-2.5 w-2.5"
+                                  />
+                                  <span className="font-semibold">{label}:</span>
+                                  <span className="truncate max-w-[100px]">{value}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="shrink-0 flex flex-col gap-1.5 justify-center h-12">
+                      <div className="shrink-0 flex flex-row sm:flex-col gap-1.5 justify-end sm:justify-center mt-2 sm:mt-0 pl-[3.75rem] sm:pl-0">
                         <button
                           type="button"
                           disabled={checked.size === 0}
                           onClick={() => handleUseMatch(idx)}
-                          className="rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-2 py-1 text-[10px] font-bold text-white transition cursor-pointer whitespace-nowrap"
+                          className="rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-2.5 py-1 text-[10px] font-bold text-white transition cursor-pointer whitespace-nowrap"
                         >
                           Use Match
                         </button>
@@ -2547,7 +2597,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
                           <button
                             type="button"
                             onClick={() => handleUseAll(idx, diffFields.map(f => f.field))}
-                            className="rounded border border-indigo-700/50 bg-indigo-900/30 hover:bg-indigo-800/40 px-2 py-0.5 text-[9px] font-bold text-indigo-300 transition cursor-pointer whitespace-nowrap"
+                            className="rounded border border-indigo-700/50 bg-indigo-900/30 hover:bg-indigo-800/40 px-2.5 py-0.5 text-[9px] font-bold text-indigo-300 transition cursor-pointer whitespace-nowrap"
                           >
                             Use All
                           </button>
@@ -2562,18 +2612,18 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/60 flex flex-wrap gap-4 items-center justify-between">
+        <div className="px-4 py-4 sm:px-6 border-t border-slate-800 bg-slate-950/60 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-slate-700 hover:bg-slate-800 hover:text-white px-4 py-2 text-sm font-semibold text-slate-400 transition cursor-pointer"
+            className="rounded-lg border border-slate-700 hover:bg-slate-800 hover:text-white px-4 py-2 text-sm font-semibold text-slate-400 transition cursor-pointer text-center"
           >
             Cancel
           </button>
           
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
             {duplicateExists && (
-              <span className="text-xs text-amber-400 font-bold bg-amber-950/40 border border-amber-800/30 rounded-lg px-3 py-1.5 animate-pulse flex items-center gap-1.5 mr-2">
+              <span className="text-xs text-amber-400 font-bold bg-amber-950/40 border border-amber-800/30 rounded-lg px-3 py-1.5 animate-pulse flex items-center justify-center gap-1.5">
                 ⚠️ Duplicate title in library
               </span>
             )}
@@ -2581,7 +2631,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
               type="button"
               disabled={busy}
               onClick={() => handleImportClick("unreviewed")}
-              className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+              className="rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 px-4 py-2 text-sm font-semibold text-slate-400 hover:text-white transition cursor-pointer text-center"
             >
               Import (Review later)
             </button>
@@ -2589,7 +2639,7 @@ export function PlexImportModal({ track, previewing, onPreview, onClose, onImpor
               type="button"
               disabled={busy}
               onClick={() => handleImportClick("approved")}
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-5 py-2 text-sm font-semibold text-white transition cursor-pointer shadow-lg shadow-indigo-600/20"
+              className="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-5 py-2 text-sm font-semibold text-white transition cursor-pointer shadow-lg shadow-indigo-600/20 text-center"
             >
               {busy ? "Importing..." : "Import & Approve"}
             </button>

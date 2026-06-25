@@ -35,6 +35,7 @@ app.use(express.json());
 app.use("/api/library", createLibraryRouter(db));
 registerAudioRoutes(app, db);
 app.use("/reveal-audio", express.static(getRevealAudioCacheDir()));
+app.use("/effects", express.static(path.resolve(import.meta.dirname, "../../assets/effects")));
 app.use("/showcase", express.static(path.resolve(import.meta.dirname, "../../assets/showcase")));
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true, serverNow: Date.now() });

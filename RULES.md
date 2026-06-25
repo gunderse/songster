@@ -32,11 +32,11 @@ Songster is a digital music trivia and timeline party game where teams compete t
 *   **Action Tokens:** Every player starts the game with a set number of tokens (configured in the room settings). These tokens can be spent to perform special actions:
     *   **Skip:** Spends 1 token (active Placer only) to discard the current song and draw a new one.
     *   **Steal:** Spends 1 token (opposing teams only) to challenge.
-*   **Placing a Steal:** While the active Placer is deciding, players on *opposing teams* can spend a token to challenge.
+*   **Placing a Steal:** While the active Placer is deciding (and *before* they submit their final guess), players on *opposing teams* can spend a token to challenge.
     *   Only **one steal** can be placed per turn (first-come, first-served).
     *   The stealer chooses a slot in their own team's timeline where they believe the song fits chronologically.
 *   **Resolution:**
-    *   If the active Placer is **correct**, the card goes to the active team's timeline. Any opposing steal is discarded, and the spent token is lost.
+    *   If the active Placer is **correct**, the card goes to the active team's timeline. Any opposing steal is discarded, and the spent token is lost (since the steal is only evaluated on a wrong guess).
     *   If the active Placer is **wrong**, the card is tested against the stealer's guessed slot. If the stealer is **correct**, the card is awarded to the stealer's team timeline. If the stealer is also wrong, the card is discarded.
 
 ---

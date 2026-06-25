@@ -173,7 +173,11 @@ export function Hub({ code }: { code: string }) {
       lastResultRef.current = sig;
       fadeOutSnippet(2000);
       const won = r!.correct || r!.steal?.correct === true;
-      playSfx(won ? "correct" : "wrong");
+      if (r!.timeout) {
+        playSfx("times-up");
+      } else {
+        playSfx(won ? "correct" : "wrong");
+      }
       if (won) burstConfetti();
     }
     if (game.winnerTeamId !== null && !wonRef.current) {
@@ -208,6 +212,17 @@ export function Hub({ code }: { code: string }) {
 
   return (
     <main className="relative min-h-dvh overflow-hidden bg-slate-950 p-6 text-slate-100 sm:p-10">
+      {/* Back to Admin Button */}
+      <a
+        href="/admin"
+        className="fixed top-6 left-6 z-40 flex items-center justify-center w-10 h-10 rounded-full border border-white/10 bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition shadow-lg backdrop-blur-md cursor-pointer hover:scale-105 active:scale-95"
+        title="Back to Admin"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+        </svg>
+      </a>
+
       {/* Glowing glassmorphic ambient backdrops */}
       <div className="absolute top-[-20%] left-[-20%] h-[70%] w-[70%] rounded-full bg-indigo-500/5 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-20%] h-[70%] w-[70%] rounded-full bg-purple-600/5 blur-[120px] pointer-events-none" />
@@ -417,6 +432,14 @@ function Countdown({ endsAt, ready, emcee }: { endsAt: number; ready: boolean; e
     const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
   }, []);
+  
+  useEffect(() => {
+    startBgMusic("/showcase/music/jeopardy-theme.mp3", 0.25);
+    return () => {
+      stopBgMusic();
+    };
+  }, []);
+
   const remaining = Math.max(0, Math.ceil((endsAt - now) / 1000));
   if (remaining <= 0) return null;
 
