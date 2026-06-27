@@ -106,7 +106,7 @@ export function stopSnippet(): void {
   el.onloadedmetadata = null;
   try {
     el.pause();
-    el.src = "";
+    el.src = SILENT_AUDIO;
   } catch {
     // ignore
   }
@@ -141,7 +141,7 @@ export function stopVoice(): void {
   el.onerror = null;
   try {
     el.pause();
-    el.src = "";
+    el.src = SILENT_AUDIO;
   } catch {
     // ignore
   }
@@ -165,7 +165,7 @@ export function startBgMusic(url: string, volume = 0.18): void {
 export function stopBgMusic(): void {
   try {
     bgEl.pause();
-    bgEl.src = "";
+    bgEl.src = SILENT_AUDIO;
   } catch {
     // ignore
   }
