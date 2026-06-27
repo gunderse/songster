@@ -113,6 +113,18 @@ export function HubGame({
             🥷 {room.teams.find((t) => t.id === active.steal!.teamId)?.name} is challenging with a STEAL!
           </motion.p>
         )}
+        {active.phase === "placing" && (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              onClick={() => socket.emit("hub:skipSong")}
+              className="rounded-xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-900/30 hover:text-rose-200 px-5 py-2 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
+              title="Skip song without deduction"
+            >
+              ⏭ Skip Song
+            </button>
+          </div>
+        )}
       </div>
 
       {/* The card being placed: mystery (placing) → drumroll (suspense) → flip reveal (revealing). */}

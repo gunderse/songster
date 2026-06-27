@@ -115,6 +115,12 @@ If AI services are down, the game automatically degrades gracefully to text-only
 - didn't hear any song recaps during the finale showcase.
 - smoke test reveal generation should generate live dialog from ollama and match the full finale reveal including background video and song snippets played as mentioned.  
 
+- 50/50
+- noise over
+- skip intro
+- don't show the song name for the initial milestone card drawn
+- if the final reveal showcase is taking too long continue playing the song segment until it is to fill the awkward gap in time.
+
 Bugs:
 **DONE** on my ipad I could hear the preparing music but no dialog or song music.  On my PC music and dialog sound worked but I couldn't hear the new sound effects for correct, incorrect or times up.  It is still randomly showing showcases unexpectedly even though I turned them off except for the finale.  Major Bug: sometimes the same player gets 2 turns in a row.  Bug: intro doesn't always mention the correct player names per team often grouping them all into the same team and ties are impossible as the first team to score the winning point wins.  Responsive layout on the library curate and import dialog on my iphone is still unusable as buttons are off screen and I can't scroll them into view and the results list forces me to scroll to see the curate button.  Bug: a player placed a song from 1980 in the slot right before a song from 1980 and wasn't awarded a point. Songs from the same year as an adjacent slot count as a point.  When a player's time was up without making a selection it still randomly placed the song - wrong it should just mention it was a fail or something and move on to the next teams turn.  During the final showcase reveal play snippets of the songs as they are mentioned.  There are character artifacts embedded in the commentary script presented, things like brackets and single characters within [] [ ] ['] [/] when it should be plain readable text.
 

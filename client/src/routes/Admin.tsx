@@ -6,10 +6,11 @@ import type { CreateAck, RoomConfig } from "@songster/shared/room";
 import {
   fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth, testPlexSettings,
   fetchAdminHealth, runAdminBenchmark, runShowcaseSmoketest, fetchActiveRooms, destroyRoom, destroyAllRooms,
+  audioStreamUrl, fetchSongs,
   type AdminHealthResult, type BenchmarkResults, type BenchmarkPhase, type ActiveRoom,
 } from "../api";
 import type { ShowcaseView } from "@songster/shared/game";
-import { playCues, startBgMusic, stopBgMusic, stopCues, unlockAudio } from "../audio";
+import { playCues, startBgMusic, stopBgMusic, stopCues, unlockAudio, playSnippet, stopSnippet } from "../audio";
 import { socket } from "../socket";
 import { Roster } from "../components/Roster";
 import { hubUrl, joinUrl, useRoomState } from "../useRoom";
@@ -180,6 +181,7 @@ export function Admin() {
 
         <PlexSettingsForm />
         <AiBenchmarkPanel />
+        <HubAudioSmokeTestPanel />
 
         {/* Active Rooms Listing */}
         <section className="mt-8 border-t border-slate-900 pt-6">
@@ -942,6 +944,123 @@ function AiBenchmarkPanel() {
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+function HubAudioSmokeTestPanel() {
+  const [songs, setSongs] = useState<any[]>([]);
+  const [playingSong, setPlayingSong] = useState<any | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function loadSongs() {
+    setLoading(true);
+    try {
+      const list = await fetchSongs({ limit: 50 });
+      setSongs(list);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleUnlock() {
+    unlockAudio();
+    setUnlocked(true);
+  }
+
+  function playRandom() {
+    if (songs.length === 0) return;
+    const rand = songs[Math.floor(Math.random() * songs.length)]!;
+    setPlayingSong(rand);
+    const url = audioStreamUrl(rand.id);
+    playSnippet(url, rand.snippetStartS ?? 10, rand.snippetLenS ?? 30);
+  }
+
+  function handleSkip() {
+    stopSnippet(true);
+    if (songs.length > 0) {
+      playRandom();
+    } else {
+      setPlayingSong(null);
+    }
+  }
+
+  function handleStop() {
+    stopSnippet(true);
+    setPlayingSong(null);
+  }
+
+  return (
+    <section className="mt-8 border-t border-slate-900 pt-6">
+      <h2 className="text-lg font-black text-slate-100">Hub Audio &amp; Skip Smoke Test</h2>
+      <p className="text-xs text-slate-500 mt-0.5">
+        Simulate hub audio unlocking, loading a random song, starting snippet playback, and skipping/stopping.
+      </p>
+
+      <div className="mt-4 flex flex-wrap gap-3 items-center">
+        <button
+          type="button"
+          onClick={handleUnlock}
+          className={`rounded-xl px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer ${
+            unlocked
+              ? "bg-emerald-950 border border-emerald-900/50 text-emerald-400"
+              : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/10"
+          }`}
+        >
+          {unlocked ? "✓ Audio Unlocked" : "🔊 Tap to Enable/Unlock Audio"}
+        </button>
+
+        <button
+          type="button"
+          onClick={loadSongs}
+          disabled={loading}
+          className="rounded-xl bg-slate-900 border border-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 transition active:scale-[0.98] cursor-pointer"
+        >
+          {loading ? "Loading track pool…" : songs.length > 0 ? `Refresh Pool (${songs.length})` : "📥 Load Track Pool"}
+        </button>
+
+        {songs.length > 0 && (
+          <button
+            type="button"
+            onClick={playRandom}
+            className="rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold px-4 py-2 text-xs transition active:scale-[0.98] cursor-pointer"
+          >
+            🎵 Play Random Snippet
+          </button>
+        )}
+
+        {playingSong && (
+          <>
+            <button
+              type="button"
+              onClick={handleSkip}
+              className="rounded-xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-900/30 hover:text-rose-200 px-4 py-2 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-[0.98] cursor-pointer shadow-md"
+            >
+              ⏭ Skip Song
+            </button>
+            <button
+              type="button"
+              onClick={handleStop}
+              className="rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-800 text-slate-400 px-4 py-2 text-xs font-bold uppercase transition active:scale-[0.98] cursor-pointer"
+            >
+              ⏹ Stop
+            </button>
+          </>
+        )}
+      </div>
+
+      {playingSong && (
+        <div className="mt-4 p-4 rounded-2xl bg-slate-900/40 border border-white/5 max-w-md animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Now Streaming Snippet</div>
+          <div className="mt-1 font-bold text-sm text-slate-100 truncate">{playingSong.title}</div>
+          <div className="text-xs text-slate-400 truncate">
+            {playingSong.artist} ({playingSong.year})
+          </div>
+        </div>
+      )}
     </section>
   );
 }

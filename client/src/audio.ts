@@ -69,34 +69,42 @@ function fade(el: HTMLAudioElement, from: number, to: number, ms: number): void 
 }
 
 export function playSnippet(url: string, startS: number, lenS: number, maxVolume = 1): void {
-  stopSnippet();
+  stopSnippet(false);
   if (!unlocked) return;
   const el = snippetEl;
   el.src = url;
   el.preload = "auto";
   el.volume = 0;
 
-  const onReady = () => {
+  const onMetadata = () => {
+    el.onloadedmetadata = null;
     try {
       el.currentTime = startS;
     } catch {
-      // seeking may be unsupported until more data loads; fall back to start
+      // ignore
     }
-    void el.play().catch(() => undefined);
-    fade(el, 0, maxVolume, 400);
-    snippetStopTimer = setTimeout(
-      () => {
-        fade(el, el.volume, 0, 500);
-        setTimeout(stopSnippet, 520);
-      },
-      Math.max(800, lenS * 1000 - 500),
-    );
   };
-  el.oncanplay = onReady;
+
+  if (el.readyState >= 1) {
+    onMetadata();
+  } else {
+    el.onloadedmetadata = onMetadata;
+  }
+
   el.load();
+  void el.play().catch(() => undefined);
+  fade(el, 0, maxVolume, 400);
+
+  snippetStopTimer = setTimeout(
+    () => {
+      fade(el, el.volume, 0, 500);
+      setTimeout(stopSnippet, 520);
+    },
+    Math.max(800, lenS * 1000 - 500),
+  );
 }
 
-export function stopSnippet(): void {
+export function stopSnippet(releaseConnection = true): void {
   if (snippetStopTimer !== null) {
     clearTimeout(snippetStopTimer);
     snippetStopTimer = null;
@@ -106,7 +114,9 @@ export function stopSnippet(): void {
   el.onloadedmetadata = null;
   try {
     el.pause();
-    el.src = SILENT_AUDIO;
+    if (releaseConnection) {
+      el.src = SILENT_AUDIO;
+    }
   } catch {
     // ignore
   }
@@ -124,7 +134,7 @@ export function fadeOutSnippet(ms = 1600): void {
 
 /** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */
 export function playVoiceUrl(url: string | null): void {
-  stopVoice();
+  stopVoice(false);
   if (url === null || !unlocked) return;
   const el = voiceEl;
   el.onended = null;
@@ -135,13 +145,15 @@ export function playVoiceUrl(url: string | null): void {
   void el.play().catch(() => undefined);
 }
 
-export function stopVoice(): void {
+export function stopVoice(releaseConnection = true): void {
   const el = voiceEl;
   el.onended = null;
   el.onerror = null;
   try {
     el.pause();
-    el.src = SILENT_AUDIO;
+    if (releaseConnection) {
+      el.src = SILENT_AUDIO;
+    }
   } catch {
     // ignore
   }
@@ -152,7 +164,7 @@ export function stopVoice(): void {
 let cueChain: { cancelled: boolean } | null = null;
 
 export function startBgMusic(url: string, volume = 0.18): void {
-  stopBgMusic();
+  stopBgMusic(false);
   if (!unlocked) return;
   const el = bgEl;
   el.src = url;
@@ -162,10 +174,12 @@ export function startBgMusic(url: string, volume = 0.18): void {
   void el.play().catch(() => undefined);
 }
 
-export function stopBgMusic(): void {
+export function stopBgMusic(releaseConnection = true): void {
   try {
     bgEl.pause();
-    bgEl.src = SILENT_AUDIO;
+    if (releaseConnection) {
+      bgEl.src = SILENT_AUDIO;
+    }
   } catch {
     // ignore
   }
@@ -173,7 +187,7 @@ export function stopBgMusic(): void {
 
 /** Play voiced cues in order. `onIndex(i)` advances captions; `onIndex(-1)` signals done. */
 export function playCues(cues: Array<{ audioUrl: string | null; durationMs: number; songId?: string; snippetStartS?: number; snippetLenS?: number }>, onIndex: (index: number) => void): void {
-  stopVoice();
+  stopVoice(false);
   const token = { cancelled: false };
   cueChain = token;
   let i = 0;
