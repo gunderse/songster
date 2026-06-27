@@ -319,11 +319,17 @@ function Scoreboard({ room }: { room: RoomState }) {
     <div className="mx-auto w-full max-w-2xl space-y-3 bg-slate-900/30 border border-white/5 rounded-2xl p-5 backdrop-blur-sm">
       {room.teams.map((team) => {
         const len = game.timelines.find((t) => t.teamId === team.id)?.cards.filter((c) => !c.isSeed).length ?? 0;
+        const playersForTeam = room.players.filter((p) => p.teamId === team.id).map((p) => p.name);
         return (
           <div key={team.id} className="flex items-center gap-4">
-            <span className="w-20 text-right font-black font-heading text-sm uppercase tracking-wider" style={{ color: team.color }}>
-              {team.name}
-            </span>
+            <div className="w-28 flex flex-col items-end select-none min-w-0">
+              <span className="font-black font-heading text-sm uppercase tracking-wider leading-none" style={{ color: team.color }}>
+                {team.name}
+              </span>
+              <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[110px] mt-1" title={playersForTeam.join(", ")}>
+                {playersForTeam.length > 0 ? playersForTeam.join(", ") : "no players"}
+              </span>
+            </div>
             <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-slate-950 border border-white/5 p-[2px]">
               <div 
                 className="h-full rounded-full transition-all duration-500 relative overflow-hidden" 

@@ -136,6 +136,10 @@ export function Hub({ code }: { code: string }) {
     }
   }
 
+  function skipSong() {
+    socket.emit("hub:skipSong");
+  }
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === "Space" || e.key === " ") {
@@ -339,6 +343,16 @@ export function Hub({ code }: { code: string }) {
                     title="Press Spacebar to toggle"
                   >
                     {room.game.paused ? "▶ Resume" : "⏸ Pause"}
+                  </button>
+                )}
+                {room?.game && room.game.active && room.game.active.phase === "placing" && (
+                  <button
+                    type="button"
+                    onClick={skipSong}
+                    className="rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-rose-400 hover:border-rose-900/50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
+                    title="Skip the current song without deduction"
+                  >
+                    ⏭ Skip
                   </button>
                 )}
                 <span className="font-mono text-lg font-bold tracking-widest text-indigo-400 bg-indigo-950/40 border border-indigo-900/40 rounded-lg px-3 py-1 shadow-inner">{code}</span>

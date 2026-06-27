@@ -181,8 +181,7 @@ export class EmceeService {
     }
 
     instructions.push(
-      `Explain how steals work: if an opposing team spends a steal token to challenge *before* the active team submits their guess, and the active team's guess is wrong, the card is tested against the stealer's guessed slot. If the stealer is correct, their team steals the card! Only one steal attempt is allowed per turn.`,
-      `Explain tiebreaking: teams must have an equal number of turns. If there is a tie at the target score of ${targetSongs} at the end of a round, we enter sudden-death rounds until one team pulls ahead.`
+      `Explain how steals work: if an opposing team spends a steal token to challenge *before* the active team submits their guess, and the active team's guess is wrong, the card is tested against the stealer's guessed slot. If the stealer is correct, their team steals the card! Only one steal attempt is allowed per turn.`
     );
 
     if (nextPlayerName) {

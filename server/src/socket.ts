@@ -149,6 +149,10 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       socket.emit("room:state", manager.stateView(room));
     });
 
+    socket.on("hub:skipSong", () => {
+      manager.hubSkipSong(socket.id);
+    });
+
     socket.on("disconnect", (reason) => {
       logger.info({ socketId: socket.id, reason }, "client disconnected");
       const room = manager.handleDisconnect(socket.id);

@@ -602,6 +602,36 @@ export class RoomManager {
     if (game.active.placerId !== player.id || player.tokens <= 0) return room;
 
     player.tokens -= 1;
+    return this.performSongSkip(room);
+  }
+
+  /** The hub requests a skip — draw a new song without charging any player/team tokens. */
+  hubSkipSong(socketId: string): Room | undefined {
+    let room = this.findRoomByHubSocket(socketId);
+    if (room === undefined) {
+      const found = this.findPlayerBySocket(socketId);
+      if (found !== undefined) room = found.room;
+    }
+    if (room === undefined) return undefined;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing") return room;
+
+    return this.performSongSkip(room);
+  }
+
+  findRoomByHubSocket(socketId: string): Room | undefined {
+    for (const room of this.rooms.values()) {
+      if (room.hubSockets.has(socketId)) {
+        return room;
+      }
+    }
+    return undefined;
+  }
+
+  private performSongSkip(room: Room): Room {
+    const game = room.game;
+    if (game === null || game.active === null) return room;
+
     const song = sampleOne(this.db, room.config.deck, room.config.musicSource, [...game.used]);
     if (song === null) {
       this.finishGame(room);
@@ -868,23 +898,16 @@ export class RoomManager {
     const leadChanged = newLeader !== null && game.leaderTeamId !== null && newLeader !== game.leaderTeamId;
     if (newLeader !== null) game.leaderTeamId = newLeader;
 
-    // Check for round end and win condition
-    const isEndOfRound = game.turnIndex === game.teams.length - 1;
+    // Check win condition (first team to target score wins immediately)
     let triggersWin = false;
     let winnerTeamId: string | null = null;
 
-    if (isEndOfRound) {
-      const teamScores = game.teams.map((t) => ({ teamId: t.teamId, score: scoreOf(t.timeline) }));
-      const maxScore = Math.max(...teamScores.map((ts) => ts.score));
-      if (maxScore >= game.target) {
-        const leaders = teamScores.filter((ts) => ts.score === maxScore);
-        if (leaders.length === 1) {
-          triggersWin = true;
-          winnerTeamId = leaders[0]!.teamId;
-        } else {
-          logger.info({ code: room.code, maxScore }, "Tied game at target score; extending for tiebreaker sudden death");
-        }
-      }
+    const currentScores = game.teams.map((t) => ({ teamId: t.teamId, score: scoreOf(t.timeline) }));
+    const teamsAtOrAboveTarget = currentScores.filter((ts) => ts.score >= game.target);
+    if (teamsAtOrAboveTarget.length > 0) {
+      triggersWin = true;
+      const sortedWinners = [...teamsAtOrAboveTarget].sort((a, b) => b.score - a.score);
+      winnerTeamId = sortedWinners[0]!.teamId;
     }
 
     // Pick the reveal "outro": a full showcase at peaks, else the single emcee line.

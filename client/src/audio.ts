@@ -103,8 +103,10 @@ export function stopSnippet(): void {
   }
   const el = snippetEl;
   el.oncanplay = null;
+  el.onloadedmetadata = null;
   try {
     el.pause();
+    el.src = "";
   } catch {
     // ignore
   }
@@ -139,6 +141,7 @@ export function stopVoice(): void {
   el.onerror = null;
   try {
     el.pause();
+    el.src = "";
   } catch {
     // ignore
   }
@@ -162,6 +165,7 @@ export function startBgMusic(url: string, volume = 0.18): void {
 export function stopBgMusic(): void {
   try {
     bgEl.pause();
+    bgEl.src = "";
   } catch {
     // ignore
   }

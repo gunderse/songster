@@ -56,6 +56,7 @@ export interface ClientToServerEvents {
   "room:pause": (payload: { code: string }) => void;
   "room:resume": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
+  "hub:skipSong": () => void;
   "player:placeCard": (payload: { index: number }) => void;
   "player:useSkip": () => void;
   "player:stealPlace": (payload: { index: number }) => void;
