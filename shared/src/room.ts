@@ -16,7 +16,7 @@ export type DeckFilter = z.infer<typeof deckFilterSchema>;
 
 export const roomConfigSchema = z.object({
   targetLength: z.number().int().min(3).max(20).default(7),
-  tokensPerPlayer: z.number().int().min(0).max(5).default(2),
+  specialsPerTeam: z.number().int().min(0).max(10).default(1),
   snippetLenS: z.number().int().min(5).max(60).default(30),
   teamCount: z.number().int().min(2).max(4).default(2),
   /** Per-turn timer (s). 0 disables the auto-resolve. */
@@ -35,6 +35,7 @@ export interface TeamView {
   name: string;
   color: string;
   playerIds: string[];
+  tokens: number;
 }
 
 export interface PlayerView {
@@ -43,8 +44,6 @@ export interface PlayerView {
   teamId: string | null;
   connected: boolean;
   isBot: boolean;
-  /** Remaining Skip/Steal tokens (0 until the game starts). */
-  tokens: number;
 }
 
 export interface RoomState {

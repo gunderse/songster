@@ -44,6 +44,8 @@ export interface ServerToClientEvents {
   /** Hub-only: a full themed showcase segment at a peak moment. */
   "showcase:play": (payload: ShowcaseView) => void;
   "room:destroyed": () => void;
+  /** Hub-only: play a distraction annoying sound. */
+  "audio:distraction": (payload: { url: string }) => void;
 }
 
 export interface ClientToServerEvents {
@@ -55,10 +57,13 @@ export interface ClientToServerEvents {
   "room:start": (payload: { code: string }) => void;
   "room:pause": (payload: { code: string }) => void;
   "room:resume": (payload: { code: string }) => void;
+  "room:skipIntro": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
   "hub:skipSong": () => void;
   "player:placeCard": (payload: { index: number }) => void;
   "player:useSkip": () => void;
+  "player:use5050": () => void;
+  "player:useDistraction": () => void;
   "player:stealPlace": (payload: { index: number }) => void;
   "player:replay": () => void;
   /** Play the next slice of the same song (continuation, hub-only). */

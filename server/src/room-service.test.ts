@@ -12,7 +12,7 @@ test("RoomManager pause and resume", () => {
 
   const room = manager.createRoom({
     targetLength: 7,
-    tokensPerPlayer: 2,
+    specialsPerTeam: 3,
     snippetLenS: 30,
     teamCount: 2,
     turnTimerS: 45,
@@ -21,6 +21,7 @@ test("RoomManager pause and resume", () => {
     showcaseSteals: false,
     showcaseLeadChanges: false,
     showcaseStreaks: false,
+    showcaseMilestones: false,
   });
 
   assert.equal(room.game, null);

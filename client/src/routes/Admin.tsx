@@ -81,7 +81,7 @@ export function Admin() {
     const config: RoomConfig = {
       teamCount,
       targetLength,
-      tokensPerPlayer: tokens,
+      specialsPerTeam: tokens,
       snippetLenS: snippetLen,
       turnTimerS: turnTimer,
       deck: { genres: genres.length > 0 ? genres : undefined, tags: tags.length > 0 ? tags : undefined },
@@ -107,7 +107,7 @@ export function Admin() {
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <NumberField label="Teams" value={teamCount} min={2} max={4} onChange={setTeamCount} />
           <NumberField label="Win at" value={targetLength} min={3} max={20} onChange={setTargetLength} />
-          <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
+          <NumberField label="Specials/team" value={tokens} min={0} max={10} onChange={setTokens} />
           <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
           <NumberField label="Turn timer s" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
         </div>
@@ -314,6 +314,30 @@ export function Admin() {
                     {bot.name} ✕
                   </button>
                 ))}
+            </div>
+          )}
+
+          {room.status === "playing" && (
+            <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+              <h3 className="text-sm font-bold text-slate-350">🎮 Game Controls</h3>
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => socket.emit(room.game?.paused ? "room:resume" : "room:pause", { code })}
+                  className="rounded-lg bg-slate-800 hover:bg-slate-750 border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition active:scale-[0.98] cursor-pointer"
+                >
+                  {room.game?.paused ? "▶ Resume Game" : "⏸ Pause Game"}
+                </button>
+                {room.game?.countdownEndsAt !== null && room.game?.countdownReady && (
+                  <button
+                    type="button"
+                    onClick={() => socket.emit("room:skipIntro", { code })}
+                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-4 py-2 text-xs font-bold text-white transition active:scale-[0.98] cursor-pointer"
+                  >
+                    ⏩ Skip Intro
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -957,7 +981,7 @@ function HubAudioSmokeTestPanel() {
   async function loadSongs() {
     setLoading(true);
     try {
-      const list = await fetchSongs({ limit: 50 });
+      const list = await fetchSongs({});
       setSongs(list);
     } catch {
       // ignore

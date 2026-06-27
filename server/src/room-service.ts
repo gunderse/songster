@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 import type DatabaseType from "better-sqlite3";
 
@@ -67,7 +69,6 @@ interface Player {
   connected: boolean;
   joinedAt: number;
   isBot: boolean;
-  tokens: number;
   lastPlacedAt?: number;
 }
 
@@ -75,6 +76,7 @@ interface Team {
   id: string;
   name: string;
   color: string;
+  tokens: number;
 }
 
 interface GameTeam {
@@ -121,6 +123,10 @@ interface ActiveTurn {
    */
   pendingResult: TurnResultView | null;
   botTimer?: ReturnType<typeof setTimeout> | null;
+  /** List of slots eliminated by 50/50. */
+  eliminatedSlots?: number[];
+  /** Distraction state details. */
+  distraction?: { teamId: string; playerName: string } | null;
 }
 
 interface GameHistoryEntry {
@@ -173,6 +179,7 @@ export type JoinResult = { ok: true; room: Room; player: Player } | { ok: false;
 export interface RoomHooks {
   broadcast(code: string): void;
   playAudioToHubs(code: string, audio: { songId: string; startS: number; lenS: number }): void;
+  playDistractionToHubs?: (code: string, payload: { url: string }) => void;
   emceeToHubs(code: string, payload: { audioUrl: string | null; hostName: string; text: string }): void;
   showcaseToHubs(code: string, payload: ShowcaseView): void;
   roomDestroyed?: (code: string) => void;
@@ -198,6 +205,7 @@ export class RoomManager {
       id: randomUUID().slice(0, 8),
       name: preset.name,
       color: preset.color,
+      tokens: 0,
     }));
     const room: Room = {
       code,
@@ -291,7 +299,6 @@ export class RoomManager {
       connected: true,
       joinedAt: Date.now(),
       isBot: false,
-      tokens: room.status === "playing" ? room.config.tokensPerPlayer : 0,
       lastPlacedAt: 0,
     };
     room.players.set(player.id, player);
@@ -311,7 +318,6 @@ export class RoomManager {
       connected: true,
       joinedAt: Date.now(),
       isBot: true,
-      tokens: 0,
       lastPlacedAt: 0,
     };
     room.players.set(bot.id, bot);
@@ -434,8 +440,8 @@ export class RoomManager {
       pauseRemainingMs: null,
       revealDeadline: null,
     };
-    for (const player of room.players.values()) {
-      player.tokens = room.config.tokensPerPlayer;
+    for (const team of room.teams) {
+      team.tokens = room.config.specialsPerTeam;
     }
     room.status = "playing";
     // Warm the host pick during the countdown so turn 1's commentary is fast.
@@ -445,11 +451,14 @@ export class RoomManager {
     void (async () => {
       try {
         const hostName = await emceeService.chooseHost();
-        if (hostName === null || room.game === null) {
+        if (room.game === null) {
           this.fallbackToShortCountdown(room);
           return;
         }
-        room.game.hostName = hostName;
+        // If no voice host is available, still run the intro with a fallback name —
+        // generateIntroClip handles voice failures gracefully with a text-only caption.
+        const resolvedHostName = hostName ?? "Fraiser";
+        room.game.hostName = resolvedHostName;
 
         const teamsWithPlayers = room.teams.map((t) => {
           const members = [...room.players.values()]
@@ -482,7 +491,7 @@ export class RoomManager {
 
         // Generate the intro clip
         const clip = await emceeService.generateIntroClip(
-          hostName,
+          resolvedHostName,
           teamsWithPlayers,
           room.game.target,
           firstPlayerName,
@@ -574,6 +583,7 @@ export class RoomManager {
     const { room } = found;
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing") return room;
+    if (game.active.distraction) return room;
     if (Date.now() < game.active.snippetEndsAt) return room; // still playing
     const song = game.active.song;
     const lenS = song.snippetLenS ?? room.config.snippetLenS;
@@ -599,9 +609,10 @@ export class RoomManager {
     const { room, player } = found;
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing") return room;
-    if (game.active.placerId !== player.id || player.tokens <= 0) return room;
+    const team = room.teams.find((t) => t.id === player.teamId);
+    if (game.active.placerId !== player.id || team === undefined || team.tokens <= 0) return room;
 
-    player.tokens -= 1;
+    team.tokens -= 1;
     return this.performSongSkip(room);
   }
 
@@ -617,6 +628,97 @@ export class RoomManager {
     if (game === null || game.active === null || game.active.phase !== "placing") return room;
 
     return this.performSongSkip(room);
+  }
+
+  use5050(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
+    const team = room.teams.find((t) => t.id === player.teamId);
+    if (game.active.placerId !== player.id || team === undefined || team.tokens <= 0) return room;
+    if (game.active.eliminatedSlots && game.active.eliminatedSlots.length > 0) return room;
+
+    const gameTeam = game.teams.find((t) => t.teamId === player.teamId);
+    if (gameTeam === undefined) return room;
+
+    const timeline = gameTeam.timeline;
+    const year = game.active.song.year;
+    
+    const correctSlots: number[] = [];
+    for (let i = 0; i <= timeline.length; i++) {
+      if (isCorrectPlacement(timeline, i, year)) {
+        correctSlots.push(i);
+      }
+    }
+
+    const wrongSlots: number[] = [];
+    for (let i = 0; i <= timeline.length; i++) {
+      if (!correctSlots.includes(i)) {
+        wrongSlots.push(i);
+      }
+    }
+
+    const countToEliminate = Math.floor(wrongSlots.length / 2);
+    if (countToEliminate > 0) {
+      const shuffled = [...wrongSlots].sort(() => Math.random() - 0.5);
+      game.active.eliminatedSlots = shuffled.slice(0, countToEliminate);
+    } else {
+      game.active.eliminatedSlots = [];
+    }
+
+    team.tokens -= 1;
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  useDistraction(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
+    if (player.teamId === null || player.teamId === game.active.teamId) return room;
+    const deployingTeam = room.teams.find((t) => t.id === player.teamId);
+    if (deployingTeam === undefined || deployingTeam.tokens <= 0 || game.active.distraction) return room;
+
+    deployingTeam.tokens -= 1;
+    game.active.distraction = { teamId: player.teamId, playerName: player.name };
+
+    void (async () => {
+      try {
+        const annoyDir = path.resolve(import.meta.dirname, "../../assets/effects/annoy");
+        const files = await fs.readdir(annoyDir);
+        const audioFiles = files.filter(
+          (f) => !f.startsWith(".") && (f.endsWith(".mp3") || f.endsWith(".wav") || f.endsWith(".ogg"))
+        );
+        const randomFile = audioFiles.length > 0 ? audioFiles[Math.floor(Math.random() * audioFiles.length)]! : "airhorn.mp3";
+        const url = `/effects/annoy/${randomFile}`;
+        this.hooks.playDistractionToHubs?.(room.code, { url });
+      } catch (err) {
+        logger.error({ error: getErrorMessage(err) }, "failed to read annoy directory");
+        this.hooks.playDistractionToHubs?.(room.code, { url: "/effects/annoy/airhorn.mp3" });
+      }
+    })();
+
+    this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  skipIntro(code: string): Room | undefined {
+    const room = this.getRoom(code);
+    if (room === undefined) return undefined;
+    const game = room.game;
+    if (game === null || game.countdownEndsAt === null) return room;
+
+    if (game.countdownTimer !== null) {
+      clearTimeout(game.countdownTimer);
+      game.countdownTimer = null;
+    }
+    game.countdownEndsAt = null;
+    this.beginTurn(room);
+    return room;
   }
 
   findRoomByHubSocket(socketId: string): Room | undefined {
@@ -777,6 +879,7 @@ export class RoomManager {
     const { room } = found;
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
+    if (game.active.distraction) return room;
     if (Date.now() < game.active.snippetEndsAt) return room; // still playing
 
     const song = game.active.song;
@@ -795,12 +898,12 @@ export class RoomManager {
     const game = room.game;
     if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
     if (player.teamId === null || player.teamId === game.active.teamId) return room; // opponents only
-    if (player.tokens <= 0 || game.active.steal !== null) return room; // one steal per turn
+    const stealerTeamRoom = room.teams.find((t) => t.id === player.teamId);
+    const stealerTeamGame = game.teams.find((t) => t.teamId === player.teamId);
+    if (stealerTeamRoom === undefined || stealerTeamGame === undefined || stealerTeamRoom.tokens <= 0 || game.active.steal !== null) return room;
 
-    const stealerTeam = game.teams.find((t) => t.teamId === player.teamId);
-    if (stealerTeam === undefined) return room;
-    const slot = Math.max(0, Math.min(index, stealerTeam.timeline.length));
-    player.tokens -= 1;
+    const slot = Math.max(0, Math.min(index, stealerTeamGame.timeline.length));
+    stealerTeamRoom.tokens -= 1;
     game.active.steal = { playerId: player.id, teamId: player.teamId, index: slot };
     this.hooks.broadcast(room.code);
     return room;
@@ -1562,10 +1665,11 @@ export class RoomManager {
       name: team.name,
       color: team.color,
       playerIds: [...room.players.values()].filter((p) => p.teamId === team.id).map((p) => p.id),
+      tokens: team.tokens,
     }));
     const players: PlayerView[] = [...room.players.values()]
       .sort((a, b) => a.joinedAt - b.joinedAt)
-      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected, isBot: p.isBot, tokens: p.tokens }));
+      .map((p) => ({ id: p.id, name: p.name, teamId: p.teamId, connected: p.connected, isBot: p.isBot }));
     return {
       code: room.code,
       status: room.status,
@@ -1608,6 +1712,8 @@ export class RoomManager {
             placeDeadline: game.active.placeDeadline,
             pendingPlacement: game.active.pendingPlacement,
             pendingStealPlacement: game.active.pendingStealPlacement,
+            eliminatedSlots: game.active.eliminatedSlots,
+            distraction: game.active.distraction,
           };
 
     // During suspense, hide cards just inserted this turn so a correct guess

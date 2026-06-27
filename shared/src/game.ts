@@ -41,6 +41,10 @@ export interface ActiveTurnView {
   pendingPlacement: { teamId: string; index: number } | null;
   /** Same idea for the stealer's chosen slot (if any). */
   pendingStealPlacement: { teamId: string; index: number } | null;
+  /** List of slots eliminated by 50/50 skill. */
+  eliminatedSlots?: number[];
+  /** Distraction state details. */
+  distraction?: { teamId: string; playerName: string } | null;
 }
 
 export interface RevealedSong {

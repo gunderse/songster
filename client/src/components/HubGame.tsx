@@ -312,7 +312,7 @@ export function HubGame({
                 style={{ borderTopColor: activeTeam?.color, borderTopWidth: 4 }}
               >
                 <div className="text-2xl font-black font-heading tabular-nums text-slate-100">{entry.year}</div>
-                <div className="line-clamp-2 text-[10px] leading-snug text-slate-400 mt-1 font-medium">{entry.title ?? ""}</div>
+                <div className="line-clamp-2 text-[10px] leading-snug text-slate-400 mt-1 font-medium">{entry.isSeed ? "Initial Milestone" : (entry.title ?? "")}</div>
               </div>
             ),
           )}

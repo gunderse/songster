@@ -31,6 +31,7 @@ let snippetStopTimer: ReturnType<typeof setTimeout> | null = null;
 const snippetEl = new Audio(SILENT_AUDIO);
 const voiceEl = new Audio(SILENT_AUDIO);
 const bgEl = new Audio(SILENT_AUDIO);
+const distractionEl = new Audio(SILENT_AUDIO);
 const sfxCorrectEl = new Audio("/effects/correct.mp3");
 const sfxIncorrectEl = new Audio("/effects/incorrect.mp3");
 const sfxTimesUpEl = new Audio("/effects/times-up.mp3");
@@ -51,7 +52,7 @@ export function unlockAudio(): void {
   if (context.state !== "running") void context.resume();
 
   // Bless all audio elements synchronously inside this user gesture so Safari/iOS allows dynamic play
-  for (const el of [snippetEl, voiceEl, bgEl, sfxCorrectEl, sfxIncorrectEl, sfxTimesUpEl]) {
+  for (const el of [snippetEl, voiceEl, bgEl, distractionEl, sfxCorrectEl, sfxIncorrectEl, sfxTimesUpEl]) {
     void el.play().then(() => {
       el.pause();
     }).catch(() => undefined);
@@ -237,6 +238,28 @@ export function stopCues(): void {
   cueChain = null;
   stopVoice();
   stopSnippet();
+  stopDistraction();
+}
+
+export function playDistraction(url: string): void {
+  if (!unlocked) return;
+  try {
+    distractionEl.src = url;
+    distractionEl.volume = 1.0;
+    distractionEl.load();
+    void distractionEl.play().catch(() => undefined);
+  } catch {
+    // ignore
+  }
+}
+
+export function stopDistraction(): void {
+  try {
+    distractionEl.pause();
+    distractionEl.src = SILENT_AUDIO;
+  } catch {
+    // ignore
+  }
 }
 
 interface Tone {

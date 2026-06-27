@@ -159,6 +159,7 @@ export class EmceeService {
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
   ): Promise<string> {
+    const teamNames = teamsWithPlayers.map((t) => t.name);
     const characters = await voiceGeneratorService.listCharacters().catch(() => [] as VoiceCharacter[]);
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
