@@ -16,6 +16,7 @@ const proxiedPaths = [
   "/reveal-audio",
   "/showcase",
   "/sounds",
+  "/effects",
 ];
 
 export default defineConfig({

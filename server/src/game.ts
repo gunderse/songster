@@ -16,9 +16,10 @@ export interface PlacedCard {
  */
 export function isCorrectPlacement(timeline: ReadonlyArray<{ year: number }>, index: number, year: number): boolean {
   if (index < 0 || index > timeline.length) return false;
-  const left = index > 0 ? timeline[index - 1]!.year : Number.NEGATIVE_INFINITY;
-  const right = index < timeline.length ? timeline[index]!.year : Number.POSITIVE_INFINITY;
-  return left <= year && year <= right;
+  const left = index > 0 ? Number(timeline[index - 1]!.year) : Number.NEGATIVE_INFINITY;
+  const right = index < timeline.length ? Number(timeline[index]!.year) : Number.POSITIVE_INFINITY;
+  const targetYear = Number(year);
+  return left <= targetYear && targetYear <= right;
 }
 
 /** Insert a card at `index` (used only when the placement is correct, so order is preserved). */

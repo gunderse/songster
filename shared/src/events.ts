@@ -53,7 +53,10 @@ export interface ClientToServerEvents {
   "room:setTeam": (payload: { teamId: string }) => void;
   /** Trigger the pre-game countdown (Start moved to the hub at M8). */
   "room:start": (payload: { code: string }) => void;
+  "room:pause": (payload: { code: string }) => void;
+  "room:resume": (payload: { code: string }) => void;
   "hub:join": (payload: { code: string }, ack: (res: HubAck) => void) => void;
+  "hub:skipSong": () => void;
   "player:placeCard": (payload: { index: number }) => void;
   "player:useSkip": () => void;
   "player:stealPlace": (payload: { index: number }) => void;

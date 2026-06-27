@@ -96,7 +96,7 @@ If AI services are down, the game automatically degrades gracefully to text-only
 - **DONE** better plex import - working images confirmed year, auto tagging?
 - **DONE** emcees reveal the year every round, complete with fully voiced Multi-Character Showcase at the finale only by default. Include input params when starting the game to toggle segments at dramatic high points: steals, lead changes, streaks.
 
-- Need to make sure old games are cleaned up and old client sessions terminated. Need a way to browse and enter games from the admin screen and terminate a game and terminate all games.  Orphaned clients should stop polling a terminated game. Need a way to get back to the admin from the hub screen.  When creating a room need to provide an optional narrator voice(s) preferences (default is still random) and multi-character showcase preferences (default is still random).  The final showcase should be longer and entertaining incorporate all dramatic high points of the game, including play audio snippets of key songs in the form of a compeling reveal or recap.
+- **DONE** Need to make sure old games are cleaned up and old client sessions terminated. Need a way to browse and enter games from the admin screen and terminate a game and terminate all games.  Orphaned clients should stop polling a terminated game. Need a way to get back to the admin from the hub screen.  When creating a room need to provide an optional narrator voice(s) preferences (default is still random) and multi-character showcase preferences (default is still random).  The final showcase should be longer and entertaining incorporate all dramatic high points of the game, including play audio snippets of key songs in the form of a compeling reveal or recap.
 - End of game recap including song clips?
 - Simplify game start, join, hub flow.  Ability to kill game.
 - Pause game showing the QR code so others can join.
@@ -106,11 +106,30 @@ If AI services are down, the game automatically degrades gracefully to text-only
 - Old session need to expire eventually
 - the initial songster intro narration with cut off a second early
 
+- pausing the game doesn't always pause the game. Also I paused and resumed during a bot guess and it never resumed.  allow more players to join even after a game started.  
+- preparing the game music.
+
+- Still seeing { } characters in the commentary script.
+- when revealing song card after a win or loss be sure not to truncate any text (wrap if needed) because it is important to see the name of the song and the year.  
+- When playing again don't need the long intro?
+- didn't hear any song recaps during the finale showcase.
+- smoke test reveal generation should generate live dialog from ollama and match the full finale reveal including background video and song snippets played as mentioned.  
+
+- 50/50
+- noise over
+- skip intro
+- don't show the song name for the initial milestone card drawn
+- if the final reveal showcase is taking too long continue playing the song segment until it is to fill the awkward gap in time.
+
+Bugs:
+**DONE** on my ipad I could hear the preparing music but no dialog or song music.  On my PC music and dialog sound worked but I couldn't hear the new sound effects for correct, incorrect or times up.  It is still randomly showing showcases unexpectedly even though I turned them off except for the finale.  Major Bug: sometimes the same player gets 2 turns in a row.  Bug: intro doesn't always mention the correct player names per team often grouping them all into the same team and ties are impossible as the first team to score the winning point wins.  Responsive layout on the library curate and import dialog on my iphone is still unusable as buttons are off screen and I can't scroll them into view and the results list forces me to scroll to see the curate button.  Bug: a player placed a song from 1980 in the slot right before a song from 1980 and wasn't awarded a point. Songs from the same year as an adjacent slot count as a point.  When a player's time was up without making a selection it still randomly placed the song - wrong it should just mention it was a fail or something and move on to the next teams turn.  During the final showcase reveal play snippets of the songs as they are mentioned.  There are character artifacts embedded in the commentary script presented, things like brackets and single characters within [] [ ] ['] [/] when it should be plain readable text.
+
 FAILURE LOG -last dialog heard was: "You missed it again, Eric!..."
 server dev: {"level":30,"time":1782224817510,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"You missed it again, Eric! This 2003 track is \"Mr. Brightside,\" and with both teams tied at zero, we're starting over.","msg":"emcee line scripted"}
 server dev: {"level":30,"time":1782224822678,"pid":39788,"hostname":"MacBook-Pro-2025.local","characterName":"Barbara","durationMs":8220,"audioUrl":"/reveal-audio/reveal-wrong-2003-Mr-Brightside-Jacques-Lu-Cont--0-e57988d77e53f856.wav","msg":"generated reveal voice clip"}
 server dev: {"level":30,"time":1782224859174,"pid":39788,"hostname":"MacBook-Pro-2025.local","code":"MTUJ","turnId":2,"msg":"emcee: suspense ceiling hit; waiting for late voice"}
 server dev: {"level":30,"time":1782224884681,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"Robby is correct! \"Pump It\" by Black Eyed Peas was released in 2005, reaching massive chart success worldwide. Red 0, Blue 1.","msg":"emcee line scripted"}
+
 server dev: {"level":30,"time":1782224892599,"pid":39788,"hostname":"MacBook-Pro-2025.local","characterName":"Barbara","durationMs":9149,"audioUrl":"/reveal-audio/reveal-correct-2005-Pump-It-0-ed3fa5bc1d3ec47e.wav","msg":"generated reveal voice clip"}
 server dev: {"level":30,"time":1782224930213,"pid":39788,"hostname":"MacBook-Pro-2025.local","code":"MTUJ","turnId":3,"msg":"emcee: suspense ceiling hit; waiting for late voice"}
 server dev: {"level":30,"time":1782224936838,"pid":39788,"hostname":"MacBook-Pro-2025.local","hostName":"Barbara","text":"Perfect call! Simple Minds dropped \"Don't You (Forget About Me)\" in 1985. This one is tied at Red 1, Blue 1!","msg":"emcee line scripted"}

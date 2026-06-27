@@ -61,8 +61,15 @@ export function registerAudioRoutes(app: Express, db: DatabaseType.Database): vo
         headers["Range"] = req.headers.range;
       }
 
+      logger.info({ url: targetUrl }, "API Call to Plex: Streaming audio track");
+
+      const controller = new AbortController();
+      req.on("close", () => {
+        controller.abort();
+      });
+
       try {
-        const streamResponse = await fetch(targetUrl, { headers });
+        const streamResponse = await fetch(targetUrl, { headers, signal: controller.signal });
         res.status(streamResponse.status);
 
         for (const [name, val] of streamResponse.headers.entries()) {
@@ -74,11 +81,22 @@ export function registerAudioRoutes(app: Express, db: DatabaseType.Database): vo
 
         if (streamResponse.body) {
           const { Readable } = await import("node:stream");
-          Readable.fromWeb(streamResponse.body as any).pipe(res);
+          const readable = Readable.fromWeb(streamResponse.body as any);
+          readable.on("error", (err: any) => {
+            if (err.name === "AbortError" || err.code === "ERR_STREAM_PREMATURE_CLOSE") {
+              return;
+            }
+            logger.warn({ id, error: err.message }, "Plex stream readable error");
+          });
+          readable.pipe(res);
         } else {
           res.end();
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error.name === "AbortError") {
+          logger.info({ id }, "Plex streaming aborted by client close");
+          return;
+        }
         logger.error({ id, error: (error as Error).message }, "Failed to proxy Plex audio stream");
         if (!res.headersSent) {
           res.sendStatus(500);

@@ -70,6 +70,25 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     );
   }
 
+  if (game.paused) {
+    return (
+      <main className="relative flex min-h-dvh flex-col items-center justify-center gap-4 p-6 text-center text-slate-100 bg-slate-950 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-indigo-500/5 blur-[80px]" />
+        <div className="flex flex-col items-center gap-4 bg-slate-900/80 border border-white/5 p-8 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-w-xs">
+          <div className="relative flex items-center justify-center w-16 h-16 bg-slate-800 rounded-full text-slate-400 text-2xl font-bold border border-white/5">
+            ⏸
+          </div>
+          <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-100 to-slate-300">
+            Game Paused
+          </h2>
+          <p className="text-xs text-slate-400">
+            The host has paused the game. Hang tight, we'll resume shortly!
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   const amPlacer = active !== null && active.placerId === me.id;
   const placerName = active !== null ? room.players.find((p) => p.id === active.placerId)?.name ?? "—" : "";
   const activeTeam = active !== null ? room.teams.find((t) => t.id === active.teamId) : null;
@@ -108,13 +127,13 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           style={{ transformStyle: "preserve-3d" }}
           className={`flex flex-col items-center gap-3 rounded-3xl border bg-slate-900/90 backdrop-blur-md px-10 py-8 shadow-2xl ${borderCol}`}
         >
-          <div className="text-6xl">{result.correct ? "✅" : "❌"}</div>
+          <div className="text-6xl">{result.correct ? "✅" : (result.timeout ? "⏰" : "❌")}</div>
           <div className="text-6xl font-black font-heading tabular-nums text-slate-100">{result.song.year}</div>
           <div className="text-xl font-bold font-heading line-clamp-1 text-slate-200 mt-2">{result.song.title ?? "Unknown"}</div>
           <div className="text-slate-400 text-sm line-clamp-1 font-semibold">{result.song.artist ?? ""}</div>
         </motion.div>
         <p className="mt-2 text-sm font-bold tracking-wide uppercase" style={{ color: result.correct ? "#34d399" : "#f43f5e" }}>
-          {result.placerName} {result.correct ? "nailed it!" : "missed"}
+          {result.placerName} {result.correct ? "nailed it!" : (result.timeout ? "ran out of time!" : "missed")}
         </p>
         {result.steal !== null && (
           <p className="text-sm font-bold uppercase tracking-wider mt-1" style={{ color: result.steal.correct ? "#fbbf24" : "#64748b" }}>

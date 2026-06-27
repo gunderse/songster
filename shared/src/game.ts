@@ -67,6 +67,7 @@ export interface TurnResultView {
   song: RevealedSong;
   /** A Steal resolution, when an opponent challenged this turn. */
   steal: StealResultView | null;
+  timeout?: boolean;
 }
 
 export interface GameView {
@@ -83,6 +84,7 @@ export interface GameView {
   countdownReady: boolean;
   /** True while the server is generating an outcome-aware emcee/showcase line. */
   commentaryPending: boolean;
+  paused: boolean;
 }
 
 export const placeCardSchema = z.object({ index: z.number().int().min(0).max(64) });
@@ -96,6 +98,9 @@ export interface ShowcaseCueView {
   text: string;
   audioUrl: string | null;
   durationMs: number;
+  songId?: string;
+  snippetStartS?: number;
+  snippetLenS?: number;
 }
 
 export interface ShowcaseView {

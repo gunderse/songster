@@ -2,7 +2,7 @@ import { ollamaModel } from "../config.js";
 import { getErrorMessage } from "../error-details.js";
 import { logger } from "../logger.js";
 import { ollamaService } from "./ollama-service.js";
-import { voiceGeneratorService, type VoiceCharacter } from "./voice-generator-service.js";
+import { voiceGeneratorService, type VoiceCharacter, cleanDialogText, stripEmphasis } from "./voice-generator-service.js";
 
 export interface EmceeSong {
   title: string | null;
@@ -22,6 +22,7 @@ export interface EmceeContext {
   leadChange?: { newLeaderName: string } | null;
   streak?: { streakCount: number } | null;
   nextPlayerName?: string | null;
+  timeout?: boolean;
 }
 
 export interface EmceeClip {
@@ -87,17 +88,18 @@ export class EmceeService {
         text = fallbackLine(context);
       }
     }
-    logger.info({ hostName, text }, "emcee line scripted");
+    const cleanedText = cleanDialogText(text);
+    logger.info({ hostName, text: cleanedText }, "emcee line scripted");
 
     // Voice it, with a single retry (the Voice API can blip under load).
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const clip = await voiceGeneratorService.generateClip(
           hostName,
-          text,
+          cleanedText,
           `reveal-${context.outcome}-${context.song.year}-${(context.song.title ?? "song").slice(0, 32)}-${attempt}`,
         );
-        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text, hostName: clip.characterName };
+        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text: stripEmphasis(cleanedText), hostName: clip.characterName };
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), hostName, attempt }, "emcee voice generation failed");
       }
@@ -105,52 +107,54 @@ export class EmceeService {
     // Voice failed but we still have the line — return text-only so the
     // caption shows on the hub. Pace the reveal to roughly how long the
     // line would have taken to read aloud (~2.4 words/sec).
-    const wordCount = text.split(/\s+/u).filter(Boolean).length;
+    const strippedText = stripEmphasis(cleanedText);
+    const wordCount = strippedText.split(/\s+/u).filter(Boolean).length;
     const estDurationMs = Math.max(2200, Math.min(9000, wordCount * 420 + 600));
-    return { audioUrl: null, durationMs: estDurationMs, text, hostName };
+    return { audioUrl: null, durationMs: estDurationMs, text: strippedText, hostName };
   }
 
   async generateIntroClip(
     hostName: string,
-    teamNames: string[],
-    playerNames: string[],
+    teamsWithPlayers: Array<{ name: string; players: string[] }>,
     targetSongs: number,
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
   ): Promise<EmceeClip | null> {
     let text: string;
+    const teamNames = teamsWithPlayers.map((t) => t.name);
     try {
-      text = await this.generateIntroText(hostName, teamNames, playerNames, targetSongs, nextPlayerName, teamsConfig);
+      text = await this.generateIntroText(hostName, teamsWithPlayers, targetSongs, nextPlayerName, teamsConfig);
     } catch (error) {
       logger.warn({ error: getErrorMessage(error) }, "emcee intro script failed; using fallback");
       text = fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
     }
-    logger.info({ hostName, text }, "emcee intro scripted");
+    const cleanedText = cleanDialogText(text);
+    logger.info({ hostName, text: cleanedText }, "emcee intro scripted");
 
     // Voice it, with a single retry
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const clip = await voiceGeneratorService.generateClip(
           hostName,
-          text,
+          cleanedText,
           `intro-${targetSongs}-${teamNames.join("-").slice(0, 32)}-${attempt}`,
         );
-        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text, hostName: clip.characterName };
+        return { audioUrl: clip.audioUrl, durationMs: clip.durationMs, text: stripEmphasis(cleanedText), hostName: clip.characterName };
       } catch (error) {
         logger.warn({ error: getErrorMessage(error), hostName, attempt }, "emcee intro voice generation failed");
       }
     }
 
     // Voice failed, fallback text-only
-    const wordCount = text.split(/\s+/u).filter(Boolean).length;
+    const strippedText = stripEmphasis(cleanedText);
+    const wordCount = strippedText.split(/\s+/u).filter(Boolean).length;
     const estDurationMs = Math.max(3000, Math.min(12000, wordCount * 420 + 600));
-    return { audioUrl: null, durationMs: estDurationMs, text, hostName };
+    return { audioUrl: null, durationMs: estDurationMs, text: strippedText, hostName };
   }
 
   private async generateIntroText(
     hostName: string,
-    teamNames: string[],
-    playerNames: string[],
+    teamsWithPlayers: Array<{ name: string; players: string[] }>,
     targetSongs: number,
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
@@ -159,10 +163,14 @@ export class EmceeService {
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
 
+    const teamDescriptions = teamsWithPlayers
+      .map((t) => `Team ${t.name} (with players: ${t.players.length > 0 ? t.players.join(", ") : "no players"})`)
+      .join(", and ");
+
     const instructions = [
       `You are ${hostName}, a ${persona} host on a live music game show called Songster.`,
       `Rival teams listen to song snippets and place them chronologically on their timeline.`,
-      `Introduce the rivals: we have teams ${teamNames.join(" and ")} with players ${playerNames.join(", ")}.`,
+      `Introduce the rivals: we have ${teamDescriptions}.`,
       `State the critical rule: the first team to place ${targetSongs} songs correctly wins.`,
     ];
 
@@ -173,8 +181,7 @@ export class EmceeService {
     }
 
     instructions.push(
-      `Explain how steals work: if the active team gets a card wrong, the opposing team can spend a steal token to place the card on their own timeline. If they are correct, they steal the card! Only one steal attempt is allowed per turn.`,
-      `Explain tiebreaking: because turns are sequential, the first team to reach ${targetSongs} wins immediately. If there is a tie, we keep playing until a team scores the winning point.`
+      `Explain how steals work: if an opposing team spends a steal token to challenge *before* the active team submits their guess, and the active team's guess is wrong, the card is tested against the stealer's guessed slot. If the stealer is correct, their team steals the card! Only one steal attempt is allowed per turn.`
     );
 
     if (nextPlayerName) {
@@ -182,7 +189,8 @@ export class EmceeService {
     }
 
     instructions.push(
-      `Keep the introduction energetic and clear, around 80-120 words. Output ONLY the spoken line — no quotes, markdown, or stage directions.`
+      `Keep the introduction energetic and clear, around 80-120 words. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'Welcome to [emphasis]Songster!'). Use this tag selectively on key words to make your delivery sound dynamic. Do NOT use closing tags like '[/emphasis]'.`
     );
 
     const prompt = instructions.join("\n");
@@ -193,11 +201,11 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 500) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName);
+    return cleanDialogText(line.length >= 3 ? line.slice(0, 2000) : fallbackIntroLine(teamNames, targetSongs, nextPlayerName));
   }
 
   async generateText(hostName: string, context: EmceeContext): Promise<string> {
-    const { song, situation, teamName, placerName, outcome, steal, leadChange, streak, nextPlayerName } = context;
+    const { song, situation, teamName, placerName, outcome, steal, leadChange, streak, nextPlayerName, timeout } = context;
     const characters = await voiceGeneratorService.listCharacters().catch(() => [] as VoiceCharacter[]);
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";
@@ -205,7 +213,9 @@ export class EmceeService {
     const verdict =
       outcome === "correct"
         ? `${placerName} of team ${teamName} placed it CORRECTLY — celebrate the right call.`
-        : `${placerName} of team ${teamName} placed it WRONG — playfully rib them for the miss.`;
+        : (timeout
+            ? `${placerName} of team ${teamName} RAN OUT OF TIME — playfully rib them for freezing up and failing to place the card.`
+            : `${placerName} of team ${teamName} placed it WRONG — playfully rib them for the miss.`);
 
     const instructions = [
       `You are ${hostName}, a ${persona} host on a live music game show with rival teams.`,
@@ -232,7 +242,9 @@ export class EmceeService {
 
     instructions.push(
       situation.length > 0 ? `Optional cheeky jab if it fits in a few words: ${situation}` : "",
-      `Keep it TIGHT and punchy: UNDER 38 words total. Start with the right/wrong reaction, state the year, and end by mentioning the next player ${nextPlayerName ? `(${nextPlayerName})` : ""}. Output ONLY the spoken line — no quotes, markdown, or stage directions.`
+      `Keep it TIGHT and punchy: UNDER 38 words total. Start with the right/wrong reaction, state the year, and end by mentioning the next player ${nextPlayerName ? `(${nextPlayerName})` : ""}. Output ONLY the spoken line — no quotes, markdown, or stage directions.`,
+      `When writing the spoken line, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g. 'That was [emphasis]correct!'). Use this tag selectively on key words to make your delivery sound dynamic. Do NOT use closing tags like '[/emphasis]'.`,
+      `IMPORTANT: The scores listed in the game state/standings ALREADY include/reflect the outcome of this turn. Do NOT add or increment the score further when narrating.`
     );
 
     const prompt = instructions.filter((line) => line.length > 0).join("\n");
@@ -243,14 +255,18 @@ export class EmceeService {
       .replace(/^["'`]+|["'`]+$/g, "")
       .replace(/\s+/gu, " ")
       .trim();
-    return line.length >= 3 ? line.slice(0, 350) : fallbackLine(context);
+    return cleanDialogText(line.length >= 3 ? line.slice(0, 350) : fallbackLine(context));
   }
 }
 
 function fallbackLine(context: EmceeContext): string {
-  const { song, outcome, teamName, steal, leadChange, streak, nextPlayerName } = context;
+  const { song, outcome, teamName, steal, leadChange, streak, nextPlayerName, timeout } = context;
   const who = song.artist !== null ? ` by ${song.artist}` : "";
-  let verdict = outcome === "correct" ? `Correct, ${teamName}!` : `Not quite, ${teamName}!`;
+  let verdict = outcome === "correct"
+    ? `Correct, ${teamName}!`
+    : (timeout
+        ? `Time's up, ${teamName}! You ran out of time.`
+        : `Not quite, ${teamName}!`);
   if (steal) {
     verdict += ` ${steal.stealerName} stole it for team ${steal.stealerTeamName}!`;
   } else if (leadChange) {
@@ -264,7 +280,7 @@ function fallbackLine(context: EmceeContext): string {
 
 function fallbackIntroLine(teamNames: string[], targetSongs: number, nextPlayerName: string | null): string {
   const handoff = nextPlayerName ? ` First up is ${nextPlayerName}!` : "";
-  return `Welcome to Songster! We have team ${teamNames.join(" and ")} ready to compete. Listen to the song snippets, place them chronologically, and be the first to reach ${targetSongs} songs to win!${handoff} Let's get ready to play!`;
+  return `Welcome to Songster! We have team ${teamNames.join(" and ")} ready to compete. Listen to the song snippets and place them chronologically. The first team to reach ${targetSongs} wins. Remember: you can spend a steal token to challenge before the other team guesses; if their guess is wrong and yours is correct, you steal the card!${handoff} Let's get ready to play!`;
 }
 
 export const emceeService = new EmceeService();

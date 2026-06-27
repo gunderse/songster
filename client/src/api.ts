@@ -181,6 +181,7 @@ export interface PlexSearchQuery {
 }
 
 export function searchPlex(query: PlexSearchQuery, signal?: AbortSignal): Promise<PlexSearchResult> {
+  console.log("[Plex API] searchPlex:", query);
   const params = new URLSearchParams();
   if (query.search) params.set("search", query.search);
   if (query.searchTitle) params.set("searchTitle", query.searchTitle);
@@ -211,6 +212,7 @@ export function importPlex(
   status: "approved" | "unreviewed" | "excluded",
   overrides?: PlexImportOverrides
 ): Promise<{ success: boolean; songId: string; title: string; artist: string | null }> {
+  console.log("[Plex API] importPlex:", { ratingKey, status, overrides });
   return http<{ success: boolean; songId: string; title: string; artist: string | null }>("/api/library/plex/import", {
     method: "POST",
     body: JSON.stringify({ ratingKey, status, ...overrides }),
@@ -234,9 +236,11 @@ export interface WebMetadataResult {
   year: number | null;
   artUrl: string | null;
   genre: string | null;
+  genres?: string[];
 }
 
 export function lookupWeb(title: string, artist: string): Promise<WebMetadataResult[]> {
+  console.log("[iTunes API] lookupWeb:", { title, artist });
   const params = new URLSearchParams();
   params.set("title", title);
   params.set("artist", artist);
@@ -244,6 +248,7 @@ export function lookupWeb(title: string, artist: string): Promise<WebMetadataRes
 }
 
 export function importWebArt(id: string, artUrl: string): Promise<LibrarySong> {
+  console.log("[iTunes API / Art] importWebArt:", { id, artUrl });
   return http<{ song: LibrarySong }>(`/api/library/songs/${id}/import-web-art`, {
     method: "POST",
     body: JSON.stringify({ artUrl }),
