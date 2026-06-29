@@ -166,8 +166,8 @@ export function HubGame({
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 h-28 w-28 rounded-full bg-black border border-white/10 shadow-inner group-hover:translate-x-1 transition-transform" />
               </div>
               <div className="text-6xl font-black font-heading tabular-nums tracking-tight mt-3 text-slate-100">{result.song.year}</div>
-              <div className="text-center text-xl font-bold font-heading line-clamp-1 text-slate-100">{result.song.title ?? "Unknown"}</div>
-              <div className="text-center text-sm font-semibold text-slate-400 line-clamp-1">{result.song.artist ?? ""}</div>
+              <div className="text-center text-xl font-bold font-heading text-slate-100">{result.song.title ?? "Unknown"}</div>
+              <div className="text-center text-sm font-semibold text-slate-400">{result.song.artist ?? ""}</div>
               {result.steal !== null && (
                 <div
                   className="mt-3 rounded-xl px-4 py-1.5 text-center text-xs uppercase tracking-widest font-extrabold border"
@@ -334,11 +334,11 @@ function Scoreboard({ room }: { room: RoomState }) {
         const playersForTeam = room.players.filter((p) => p.teamId === team.id).map((p) => p.name);
         return (
           <div key={team.id} className="flex items-center gap-4">
-            <div className="w-28 flex flex-col items-end select-none min-w-0">
-              <span className="font-black font-heading text-sm uppercase tracking-wider leading-none" style={{ color: team.color }}>
+            <div className="w-36 flex flex-col items-end select-none min-w-0">
+              <span className="font-black font-heading text-sm uppercase tracking-wider leading-none text-right" style={{ color: team.color }}>
                 {team.name}
               </span>
-              <span className="text-[10px] text-slate-500 font-semibold truncate max-w-[110px] mt-1" title={playersForTeam.join(", ")}>
+              <span className="text-[10px] text-slate-500 font-semibold text-right mt-1" title={playersForTeam.join(", ")}>
                 {playersForTeam.length > 0 ? playersForTeam.join(", ") : "no players"}
               </span>
             </div>

@@ -504,8 +504,8 @@ export class RoomManager {
           // Play the intro clip on the hub screens
           this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
 
-          // Adjust the countdown to fit the vocal rules intro duration + 2s buffer
-          const duration = clip.durationMs + 2000;
+          // Adjust the countdown to fit the vocal rules intro duration + 3s buffer
+          const duration = clip.durationMs + 3000;
           room.game.countdownEndsAt = Date.now() + duration;
           room.game.countdownReady = true;
 
@@ -1255,10 +1255,8 @@ export class RoomManager {
 
     if (game.revealTimer !== null) clearTimeout(game.revealTimer);
     if (clip !== null) {
-      // ALWAYS push the caption + (optional) audio. The Voice API may have failed
-      // — text-only is still shown so the host always has something to say.
       this.hooks.emceeToHubs(room.code, { audioUrl: clip.audioUrl, hostName: clip.hostName, text: clip.text });
-      const delayVal = Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 1800);
+      const delayVal = Math.max(POST_REVEAL_MIN_MS, clip.durationMs + 2500);
       game.revealDeadline = Date.now() + delayVal;
       game.revealTimer = setTimeout(() => {
         if (room.game !== null) {
@@ -1311,7 +1309,7 @@ export class RoomManager {
       logger.info({ code: room.code, turnId, delayMs: Date.now() - baseTimerStart }, "emcee: late voice delivered");
       // Extend the timer so the late voice gets to finish.
       if (room.game.revealTimer !== null) clearTimeout(room.game.revealTimer);
-      const lateDelayVal = Math.max(POST_REVEAL_MIN_MS, late.durationMs + 1800);
+      const lateDelayVal = Math.max(POST_REVEAL_MIN_MS, late.durationMs + 2500);
       if (room.game.paused) {
         room.game.pauseRemainingMs = lateDelayVal;
         room.game.revealDeadline = null;
