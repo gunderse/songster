@@ -214,7 +214,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         placerName: "Taylor",
         song: { title: "Smells Like Teen Spirit", artist: "Nirvana", year: 1991 },
         correct: false,
-        steal: { stealerName: "Jordan", correct: true },
+        steal: { stealerName: "Jake", correct: true },
         scoreAfter: 2,
         teamScores: [
           { teamName: "Red Devils", score: 2 },
@@ -224,7 +224,7 @@ export function createAdminRouter(manager: RoomManager): Router {
       {
         turnId: 2,
         teamName: "Red Devils",
-        placerName: "Jordan",
+        placerName: "Jake",
         song: { title: "Hey Jude", artist: "The Beatles", year: 1968 },
         correct: true,
         steal: null,
@@ -271,7 +271,7 @@ export function createAdminRouter(manager: RoomManager): Router {
           headline: "Red Devils win Songster!",
           outcome: "correct",
           gameHistory: fictionalHistory,
-          playerMentions: ["Alex", "Taylor", "Jordan", "Morgan"],
+          playerMentions: ["Alex", "Taylor", "Jake", "Morgan"],
         },
         { model, think }
       );
