@@ -54,7 +54,7 @@ const OLLAMA_TIMEOUT_MS = 45_000;
 
 export class EmceeService {
   /** Pick one host for the game: a random host-tagged voice, biased toward Ouldeon. */
-  async chooseHost(): Promise<string | null> {
+  async chooseHost(preferredHostName?: string): Promise<string | null> {
     let characters: VoiceCharacter[];
     try {
       characters = await voiceGeneratorService.listCharacters();
@@ -63,6 +63,14 @@ export class EmceeService {
       return null;
     }
     if (characters.length === 0) return null;
+
+    if (preferredHostName && preferredHostName !== "random") {
+      const found = characters.find((c) => c.name.toLowerCase() === preferredHostName.toLowerCase());
+      if (found) {
+        logger.info({ host: found.name, tags: found.tags }, "emcee host chosen (preferred)");
+        return found.name;
+      }
+    }
 
     const hostLike = characters.filter((c) => c.tags.some((t) => HOST_TAGS.includes(t)));
     const pool = hostLike.length > 0 ? hostLike : characters;

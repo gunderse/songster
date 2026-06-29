@@ -450,7 +450,7 @@ export class RoomManager {
     // Start generating the rules explanation & team intro clip
     void (async () => {
       try {
-        const hostName = await emceeService.chooseHost();
+        const hostName = await emceeService.chooseHost(room.config.narratorVoice);
         if (room.game === null) {
           this.fallbackToShortCountdown(room);
           return;
@@ -773,7 +773,7 @@ export class RoomManager {
     void (async () => {
       try {
         if (game.hostName === undefined || game.hostName === null) {
-          game.hostPromise ??= emceeService.chooseHost();
+          game.hostPromise ??= emceeService.chooseHost(room.config.narratorVoice);
           game.hostName = await game.hostPromise;
           game.hostPromise = undefined;
         }
@@ -1098,7 +1098,7 @@ export class RoomManager {
     const game = room.game;
     if (game === null) return;
     if (game.hostName === undefined || game.hostName === null) {
-      game.hostPromise ??= emceeService.chooseHost();
+      game.hostPromise ??= emceeService.chooseHost(room.config.narratorVoice);
     }
   }
 
@@ -1113,7 +1113,7 @@ export class RoomManager {
     if (game === null) return;
     // Pick the host once; if the voice API was down (null), retry on later turns.
     if (game.hostName === undefined || game.hostName === null) {
-      game.hostPromise ??= emceeService.chooseHost();
+      game.hostPromise ??= emceeService.chooseHost(room.config.narratorVoice);
       game.hostName = await game.hostPromise;
       game.hostPromise = undefined;
     }
@@ -1533,7 +1533,7 @@ export class RoomManager {
     void (async () => {
       try {
         if (game.hostName === undefined || game.hostName === null) {
-          game.hostPromise ??= emceeService.chooseHost();
+          game.hostPromise ??= emceeService.chooseHost(room.config.narratorVoice);
           game.hostName = await game.hostPromise;
           game.hostPromise = undefined;
         }

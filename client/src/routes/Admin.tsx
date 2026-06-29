@@ -26,7 +26,7 @@ export function Admin() {
   const [targetLength, setTargetLength] = useState(7);
   const [tokens, setTokens] = useState(2);
   const [snippetLen, setSnippetLen] = useState(30);
-  const [turnTimer, setTurnTimer] = useState(45);
+  const [turnTimer, setTurnTimer] = useState(60);
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [musicSource, setMusicSource] = useState<"local" | "plex" | "all">("all");
@@ -34,9 +34,19 @@ export function Admin() {
   const [showcaseLeadChanges, setShowcaseLeadChanges] = useState(false);
   const [showcaseStreaks, setShowcaseStreaks] = useState(false);
   const [showcaseMilestones, setShowcaseMilestones] = useState(false);
+  const [narratorVoice, setNarratorVoice] = useState("random");
+  const [voices, setVoices] = useState<{ name: string; tags: string[] }[]>([]);
 
   useEffect(() => {
     fetchFacets().then(setFacets).catch(() => undefined);
+    fetch("/api/admin/voices")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && Array.isArray(data.voices)) {
+          setVoices(data.voices);
+        }
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -90,6 +100,7 @@ export function Admin() {
       showcaseLeadChanges,
       showcaseStreaks,
       showcaseMilestones,
+      narratorVoice: narratorVoice !== "random" ? narratorVoice : undefined,
     };
     if (!socket.connected) socket.connect();
     socket.emit("room:create", { config }, (res: CreateAck) => {
@@ -135,6 +146,24 @@ export function Admin() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Narrator Voice</label>
+          <div className="mt-2">
+            <select
+              value={narratorVoice}
+              onChange={(e) => setNarratorVoice(e.target.value)}
+              className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition font-semibold"
+            >
+              <option value="random">🎲 Random (Biased to Fraiser/Host voices)</option>
+              {voices.map((v) => (
+                <option key={v.name} value={v.name}>
+                  🎙️ {v.name} {v.tags.length > 0 ? `(${v.tags.slice(0, 2).join(", ")})` : ""}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

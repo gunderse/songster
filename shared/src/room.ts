@@ -20,13 +20,14 @@ export const roomConfigSchema = z.object({
   snippetLenS: z.number().int().min(5).max(60).default(30),
   teamCount: z.number().int().min(2).max(4).default(2),
   /** Per-turn timer (s). 0 disables the auto-resolve. */
-  turnTimerS: z.number().int().min(0).max(180).default(45),
+  turnTimerS: z.number().int().min(0).max(180).default(60),
   deck: deckFilterSchema.default({}),
   musicSource: z.enum(["local", "plex", "all"]).default("all"),
   showcaseSteals: z.boolean().default(false),
   showcaseLeadChanges: z.boolean().default(false),
   showcaseStreaks: z.boolean().default(false),
   showcaseMilestones: z.boolean().default(false),
+  narratorVoice: z.string().optional(),
 });
 export type RoomConfig = z.infer<typeof roomConfigSchema>;
 

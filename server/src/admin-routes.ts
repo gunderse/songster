@@ -34,6 +34,24 @@ export function createAdminRouter(manager: RoomManager): Router {
   });
 
   /**
+   * GET /api/admin/voices
+   * Lists all available narrator/character voices.
+   */
+  router.get("/voices", async (_req, res) => {
+    try {
+      const characters = await voiceGeneratorService.listCharacters();
+      const voices = characters.map((c) => ({
+        name: c.name,
+        tags: c.tags,
+      }));
+      res.json({ ok: true, voices });
+    } catch (err) {
+      logger.warn({ error: getErrorMessage(err) }, "failed to list voice characters");
+      res.json({ ok: true, voices: [] });
+    }
+  });
+
+  /**
    * POST /api/admin/rooms/destroy
    * Destroys a single room.
    */
