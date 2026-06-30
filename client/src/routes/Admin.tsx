@@ -13,6 +13,7 @@ import type { ShowcaseView } from "@songster/shared/game";
 import { playCues, startBgMusic, stopBgMusic, stopCues, unlockAudio, playSnippet, stopSnippet } from "../audio";
 import { socket } from "../socket";
 import { Roster } from "../components/Roster";
+import { ShowcaseOverlay } from "../components/ShowcaseOverlay";
 import { hubUrl, joinUrl, useRoomState } from "../useRoom";
 
 export function Admin() {
@@ -710,7 +711,7 @@ function AiBenchmarkPanel() {
       } else {
         setActiveCueIndex(idx);
       }
-    });
+    }, showcase.reason === "finale");
   };
 
   const stopShowcasePlay = () => {
@@ -932,42 +933,31 @@ function AiBenchmarkPanel() {
 
             {/* Showcase Visual Live Player Representation */}
             <div className="relative overflow-hidden rounded-2xl bg-slate-950 border border-slate-900 p-6 flex flex-col justify-between min-h-[300px]">
-              {/* background preview mockup */}
-              <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/20 via-slate-950/40 to-slate-950 pointer-events-none" />
+              {showcasePlaying && activeCueIndex >= 0 ? (
+                <ShowcaseOverlay view={showcase} cueIndex={activeCueIndex} />
+              ) : (
+                <>
+                  {/* background preview mockup */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/20 via-slate-950/40 to-slate-950 pointer-events-none" />
 
-              <div className="relative z-10 flex justify-between items-start">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-400">🎬 {showcase.themeLabel}</span>
-                  <div className="text-xs text-slate-400 mt-0.5">{showcase.tagline}</div>
-                </div>
-                {showcasePlaying && (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-800/30 px-2 py-0.5 rounded-full animate-pulse">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    Playing
-                  </span>
-                )}
-              </div>
-
-              {/* Showcase active cue rendering */}
-              <div className="relative z-10 my-8 max-w-2xl mx-auto text-center">
-                {showcasePlaying && activeCueIndex >= 0 && showcase.cues[activeCueIndex] ? (
-                  <>
-                    <div className="text-xs font-bold uppercase tracking-wider text-amber-200 mb-1">
-                      {showcase.cues[activeCueIndex]!.characterName ?? showcase.cues[activeCueIndex]!.speakerLabel}
+                  <div className="relative z-10 flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-400">🎬 {showcase.themeLabel}</span>
+                      <div className="text-xs text-slate-400 mt-0.5">{showcase.tagline}</div>
                     </div>
-                    <p className="text-xl sm:text-2xl font-black text-slate-100 leading-relaxed italic drop-shadow-md">
-                      “{showcase.cues[activeCueIndex]!.text}”
-                    </p>
-                  </>
-                ) : (
-                  <div className="text-slate-500 text-sm italic">
-                    Click "Play Showcase Preview" to start narration and playback.
                   </div>
-                )}
-              </div>
+
+                  {/* Showcase active cue rendering */}
+                  <div className="relative z-10 my-8 max-w-2xl mx-auto text-center">
+                    <div className="text-slate-500 text-sm italic">
+                      Click "Play Showcase Preview" to start narration and playback.
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Progress bar dot counts */}
-              <div className="relative z-10 flex justify-center gap-2 mt-4">
+              <div className="relative z-35 flex justify-center gap-2 mt-4">
                 {showcase.cues.map((_, i) => (
                   <span
                     key={i}

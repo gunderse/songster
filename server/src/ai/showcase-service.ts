@@ -22,7 +22,7 @@ export interface ShowcaseContext {
     turnId: number;
     teamName: string;
     placerName: string;
-    song: { title: string | null; artist: string | null; year: number };
+    song: { songId?: string; title: string | null; artist: string | null; year: number };
     correct: boolean;
     steal: { stealerName: string; correct: boolean } | null;
     scoreAfter: number;
@@ -64,7 +64,7 @@ const THEMES: ThemeConfig[] = [
     tagline: "Tonight's top story",
     promptStyle: "a nightly news broadcast with an anchor tossing to a field reporter for dramatic updates",
     roles: { host: "Anchor", cohost: "Field reporter" },
-    preferredPersonas: { host: ["newscaster", "anchor", "authoritative", "professional"], cohost: ["logical", "calm", "wise"] },
+    preferredPersonas: { host: ["reporter", "newscaster", "anchor", "authoritative", "professional"], cohost: ["logical", "calm", "wise"] },
     music: "2020.mp3",
   },
   {
@@ -124,7 +124,7 @@ const THEMES: ThemeConfig[] = [
 ];
 
 const cueSchema = z.object({ speaker: z.enum(["host", "cohost"]), text: z.string().trim().min(1).max(220) });
-const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(8) });
+const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(12) });
 type Cue = z.infer<typeof cueSchema>;
 
 const OLLAMA_TIMEOUT_MS = 120_000;
@@ -177,13 +177,50 @@ export class ShowcaseService {
       }
 
       let extra = {};
-      if (context.reason === "finale" && context.winningTimeline && context.winningTimeline.length > 0) {
-        const s = context.winningTimeline[i % context.winningTimeline.length]!;
-        extra = {
-          songId: s.songId,
-          snippetStartS: s.snippetStartS,
-          snippetLenS: s.snippetLenS ?? undefined,
-        };
+      if (context.reason === "finale") {
+        const lowercaseText = cleanedText.toLowerCase();
+        let matchedSong: any = null;
+        if (context.gameHistory) {
+          const candidates = [...context.gameHistory].sort(
+            (a, b) => (b.song.title ?? "").length - (a.song.title ?? "").length
+          );
+          for (const candidate of candidates) {
+            if (!candidate.song.title) continue;
+
+            let cleanTitle = candidate.song.title.replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+            if (cleanTitle.length < 3) {
+              cleanTitle = candidate.song.title.toLowerCase();
+            }
+
+            let cleanArtist = (candidate.song.artist ?? "").replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+            if (cleanArtist.length < 3) {
+              cleanArtist = (candidate.song.artist ?? "").toLowerCase();
+            }
+
+            if (
+              (cleanTitle.length >= 3 && lowercaseText.includes(cleanTitle)) ||
+              (cleanArtist.length >= 3 && lowercaseText.includes(cleanArtist))
+            ) {
+              matchedSong = candidate;
+              break;
+            }
+          }
+        }
+
+        if (matchedSong && matchedSong.song.songId) {
+          extra = {
+            songId: matchedSong.song.songId,
+            snippetStartS: matchedSong.song.snippetStartS ?? 30,
+            snippetLenS: matchedSong.song.snippetLenS ?? undefined,
+          };
+        } else if (context.winningTimeline && context.winningTimeline.length > 0) {
+          const s = context.winningTimeline[i % context.winningTimeline.length]!;
+          extra = {
+            songId: s.songId,
+            snippetStartS: s.snippetStartS,
+            snippetLenS: s.snippetLenS ?? undefined,
+          };
+        }
       }
 
       voiced.push({
@@ -203,8 +240,9 @@ export class ShowcaseService {
       tagline: theme.tagline,
       bgVideoUrl: `/showcase/backgrounds/${theme.id}.mp4`,
       bgImageUrl: `/showcase/backgrounds/${theme.id}.jpg`,
-      bgMusicUrl: `/showcase/music/${theme.music}`,
+      bgMusicUrl: context.reason === "finale" ? null : `/showcase/music/${theme.music}`,
       cues: voiced,
+      reason: context.reason,
     };
   }
 }
@@ -228,19 +266,17 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
   if (context.reason === "finale") {
     const historyLines = context.gameHistory
       ? context.gameHistory
-          .map((h) => {
-            const scoresStr = h.teamScores
-              ? h.teamScores.map((ts) => `${ts.teamName}: ${ts.score}`).join(", ")
-              : `Placing team score: ${h.scoreAfter}`;
-            return `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${
-              h.song.title ?? "Unknown Track"
-            }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${
-              h.steal
-                ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
-                : ""
+        .map((h) => {
+          const scoresStr = h.teamScores
+            ? h.teamScores.map((ts) => `${ts.teamName}: ${ts.score}`).join(", ")
+            : `Placing team score: ${h.scoreAfter}`;
+          return `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${h.song.title ?? "Unknown Track"
+            }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${h.steal
+              ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
+              : ""
             }. Scores after turn: ${scoresStr}`;
-          })
-          .join("\n")
+        })
+        .join("\n")
       : "";
 
     const playerMentions = context.playerMentions ? `All players in this game: ${context.playerMentions.join(", ")}.` : "";
@@ -253,16 +289,17 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
         : "",
       playerMentions,
       `Here is the recap of how the game went down:\n${historyLines}`,
-      `Your task is to write a longer, dramatic, and highly entertaining review of the key moments in this game.`,
-      `Incorporate specific mentions of players, highlight key turn outcomes (e.g. replays of specific correct answers or epic steals), and make it feel like a grand finale presentation with high energy.`,
-      `Since this is a grand finale, write 4-6 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
+      `Your task is to write a longer, highly detailed, and extremely entertaining review of the key moments in this game.`,
+      `Incorporate specific mentions of players, highlight key turn outcomes (e.g. correct answers or epic steals).`,
+      `To make the wrap up highly engaging, explicitly reference specific song titles or artists from the recap in the dialogue. When a speaker brings up a song, they should say its title or artist clearly.`,
+      `Write a longer, detailed showcase segment with 5-7 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
+      `The final cue must be a short, dedicated outro/sign-off segment (e.g., a goodbye or wrap-up statement from the hosts).`,
       `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
       `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!'). Do NOT use closing tags like '[/emphasis]'.`,
       'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
-      `Speakers: "host" (${cast.host ?? theme.roles.host})${
-        theme.roles.cohost !== null
-          ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})`
-          : ' only — use "host" for every cue'
+      `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null
+        ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})`
+        : ' only — use "host" for every cue'
       }.`,
     ]
       .filter((line) => line.length > 0)
@@ -304,6 +341,28 @@ function parseScript(raw: string): Cue[] {
 }
 
 function templateCues(theme: ThemeConfig, context: ShowcaseContext): Cue[] {
+  if (context.reason === "finale" && context.gameHistory && context.gameHistory.length > 0) {
+    const cues: Cue[] = [
+      { speaker: "host", text: `We have a winner! ${context.headline}` }
+    ];
+    // Limit to up to 5 tracks from the game history
+    const history = context.gameHistory.slice(0, 5);
+    for (let i = 0; i < history.length; i++) {
+      const h = history[i]!;
+      const speaker = i % 2 === 0 && theme.roles.cohost !== null ? "cohost" : "host";
+      const action = h.correct ? "correctly placed" : "attempted to place";
+      cues.push({
+        speaker,
+        text: `Remember when ${h.placerName} of ${h.teamName} ${action} the song ${h.song.title ?? "track"} from ${h.song.year}?`
+      });
+    }
+    cues.push({
+      speaker: "host",
+      text: "What a fantastic show! That's all from the music center. Thank you for playing Songster, and goodnight!"
+    });
+    return cues;
+  }
+
   const cues: Cue[] = [{ speaker: "host", text: context.headline }];
   if (context.song !== null) {
     cues.push({

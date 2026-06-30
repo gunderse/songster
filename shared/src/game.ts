@@ -115,4 +115,5 @@ export interface ShowcaseView {
   bgImageUrl: string | null;
   bgMusicUrl: string | null;
   cues: ShowcaseCueView[];
+  reason?: string;
 }

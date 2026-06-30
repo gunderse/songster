@@ -8,6 +8,7 @@ import { voiceGeneratorService } from "./ai/voice-generator-service.js";
 import { emceeService } from "./ai/emcee-service.js";
 import { showcaseService } from "./ai/showcase-service.js";
 import type { RoomManager } from "./room-service.js";
+import { openDatabase } from "./db.js";
 
 const BENCHMARK_SAMPLE_SONG = {
   title: "Don't Stop Believin'",
@@ -212,12 +213,38 @@ export function createAdminRouter(manager: RoomManager): Router {
     const think = (req.body as { think?: boolean }).think !== false;
     const t0 = Date.now();
 
+    let realSongs: Array<{ songId: string; title: string | null; artist: string | null; year: number; snippetStartS: number; snippetLenS: number | null }> = [];
+    try {
+      const db = openDatabase();
+      const rows = db.prepare("SELECT id, title, artist, year, snippet_start_s, snippet_len_s FROM songs LIMIT 4").all() as any[];
+      realSongs = rows.map((r) => ({
+        songId: r.id,
+        title: r.title,
+        artist: r.artist,
+        year: r.year,
+        snippetStartS: r.snippet_start_s || 30,
+        snippetLenS: r.snippet_len_s || null,
+      }));
+    } catch (err) {
+      logger.warn({ error: getErrorMessage(err) }, "could not load real songs for showcase smoketest");
+    }
+
+    const defaultFictional = [
+      { title: "Billie Jean", artist: "Michael Jackson", year: 1982, songId: "billie-jean-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Smells Like Teen Spirit", artist: "Nirvana", year: 1991, songId: "teen-spirit-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Hey Jude", artist: "Beatles", year: 1968, songId: "hey-jude-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Stayin' Alive", artist: "Bee Gees", year: 1977, songId: "stayin-alive-id", snippetStartS: 30, snippetLenS: null },
+    ];
+
+    const testSongs = realSongs.length >= 4 ? realSongs : defaultFictional;
+    const finalSong = testSongs[3]!;
+
     const fictionalHistory = [
       {
         turnId: 0,
         teamName: "Red Devils",
         placerName: "Alex",
-        song: { title: "Billie Jean", artist: "Michael Jackson", year: 1982 },
+        song: { songId: testSongs[0]!.songId, title: testSongs[0]!.title, artist: testSongs[0]!.artist, year: testSongs[0]!.year },
         correct: true,
         steal: null,
         scoreAfter: 1,
@@ -230,7 +257,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 1,
         teamName: "Blue Angels",
         placerName: "Taylor",
-        song: { title: "Smells Like Teen Spirit", artist: "Nirvana", year: 1991 },
+        song: { songId: testSongs[1]!.songId, title: testSongs[1]!.title, artist: testSongs[1]!.artist, year: testSongs[1]!.year },
         correct: false,
         steal: { stealerName: "Jake", correct: true },
         scoreAfter: 2,
@@ -243,7 +270,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 2,
         teamName: "Red Devils",
         placerName: "Jake",
-        song: { title: "Hey Jude", artist: "The Beatles", year: 1968 },
+        song: { songId: testSongs[2]!.songId, title: testSongs[2]!.title, artist: testSongs[2]!.artist, year: testSongs[2]!.year },
         correct: true,
         steal: null,
         scoreAfter: 3,
@@ -256,7 +283,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 3,
         teamName: "Blue Angels",
         placerName: "Morgan",
-        song: { title: "Stayin' Alive", artist: "Bee Gees", year: 1977 },
+        song: { songId: testSongs[3]!.songId, title: testSongs[3]!.title, artist: testSongs[3]!.artist, year: testSongs[3]!.year },
         correct: true,
         steal: null,
         scoreAfter: 1,
@@ -269,7 +296,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 4,
         teamName: "Red Devils",
         placerName: "Alex",
-        song: { title: "Bohemian Rhapsody", artist: "Queen", year: 1975 },
+        song: { songId: finalSong.songId, title: finalSong.title, artist: finalSong.artist, year: finalSong.year },
         correct: true,
         steal: null,
         scoreAfter: 4,
@@ -284,12 +311,17 @@ export function createAdminRouter(manager: RoomManager): Router {
       const showcase = await showcaseService.build(
         {
           reason: "finale",
-          song: { title: "Bohemian Rhapsody", artist: "Queen", year: 1975 },
+          song: { title: finalSong.title, artist: finalSong.artist, year: finalSong.year },
           situation: "Red Devils won the match with a final score of 4 points to 1 point.",
           headline: "Red Devils win Songster!",
           outcome: "correct",
           gameHistory: fictionalHistory,
           playerMentions: ["Alex", "Taylor", "Jake", "Morgan"],
+          winningTimeline: testSongs.map((ts) => ({
+            songId: ts.songId,
+            snippetStartS: ts.snippetStartS,
+            snippetLenS: ts.snippetLenS,
+          })),
         },
         { model, think }
       );

@@ -104,7 +104,7 @@ export function Hub({ code }: { code: string }) {
         } else {
           setShowcaseCue(i);
         }
-      });
+      }, view.reason === "finale");
     }
     function onDistraction(payload: { url: string }) {
       playDistraction(payload.url);

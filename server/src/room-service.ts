@@ -133,7 +133,7 @@ interface GameHistoryEntry {
   turnId: number;
   teamName: string;
   placerName: string;
-  song: { title: string | null; artist: string | null; year: number };
+  song: { songId?: string; title: string | null; artist: string | null; year: number };
   correct: boolean;
   steal: { stealerName: string; correct: boolean } | null;
   scoreAfter: number;
@@ -985,7 +985,7 @@ export class RoomManager {
       turnId: game.turnCounter,
       teamName: currentTeamName,
       placerName,
-      song: { title: song.title, artist: song.artist, year: song.year },
+      song: { songId: song.songId, title: song.title, artist: song.artist, year: song.year },
       correct,
       steal: stealResult ? { stealerName: stealResult.playerName, correct: stealResult.correct } : null,
       scoreAfter: scoreOf(team.timeline),

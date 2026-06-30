@@ -1,17 +1,26 @@
+import { useEffect, useRef } from "react";
 import type { ShowcaseView } from "@songster/shared/game";
 
 export function ShowcaseOverlay({ view, cueIndex }: { view: ShowcaseView; cueIndex: number }) {
   const idx = Math.max(0, Math.min(cueIndex, view.cues.length - 1));
   const cue = view.cues[idx];
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.muted = true;
+    }
+  }, [view.bgVideoUrl]);
 
   return (
     <div className="absolute inset-0 z-30 overflow-hidden bg-black">
       {view.bgVideoUrl !== null ? (
         <video
+          ref={videoRef}
           src={view.bgVideoUrl}
           autoPlay
           loop
-          muted
+          muted={true}
           playsInline
           className="absolute inset-0 h-full w-full object-cover opacity-60"
           onError={(e) => {
