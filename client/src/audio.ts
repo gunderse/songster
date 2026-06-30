@@ -218,7 +218,7 @@ export function playCues(
         if (token.cancelled) return;
         i += 1;
         next();
-      }, isFinale ? 1600 : 400);
+      }, isFinale ? 2500 : 400);
     };
 
     const snippetVolume = isFinale ? 0.20 : 0.15;

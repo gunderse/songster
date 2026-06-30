@@ -178,8 +178,8 @@ export class ShowcaseService {
 
       let extra = {};
       if (context.reason === "finale") {
-        const lowercaseText = cleanedText.toLowerCase();
         let matchedSong: any = null;
+        const lowercaseText = cleanedText.toLowerCase();
         if (context.gameHistory) {
           const candidates = [...context.gameHistory].sort(
             (a, b) => (b.song.title ?? "").length - (a.song.title ?? "").length
@@ -201,24 +201,54 @@ export class ShowcaseService {
               (cleanTitle.length >= 3 && lowercaseText.includes(cleanTitle)) ||
               (cleanArtist.length >= 3 && lowercaseText.includes(cleanArtist))
             ) {
-              matchedSong = candidate;
+              matchedSong = candidate.song;
               break;
             }
           }
         }
 
-        if (matchedSong && matchedSong.song.songId) {
+        // If it's the very first cue, and no song matched yet, look ahead for the first song mentioned anywhere
+        if (i === 0 && !matchedSong) {
+          for (const otherCue of cues) {
+            const otherText = cleanDialogText(otherCue.text).toLowerCase();
+            if (context.gameHistory) {
+              const candidates = [...context.gameHistory].sort(
+                (a, b) => (b.song.title ?? "").length - (a.song.title ?? "").length
+              );
+              for (const candidate of candidates) {
+                if (!candidate.song.title) continue;
+                let cleanTitle = candidate.song.title.replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+                if (cleanTitle.length < 3) cleanTitle = candidate.song.title.toLowerCase();
+                let cleanArtist = (candidate.song.artist ?? "").replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+                if (cleanArtist.length < 3) cleanArtist = (candidate.song.artist ?? "").toLowerCase();
+
+                if (
+                  (cleanTitle.length >= 3 && otherText.includes(cleanTitle)) ||
+                  (cleanArtist.length >= 3 && otherText.includes(cleanArtist))
+                ) {
+                  matchedSong = candidate.song;
+                  break;
+                }
+              }
+            }
+            if (matchedSong) break;
+          }
+
+          // If still no matches anywhere, fall back to the winning song or first song in history
+          if (!matchedSong) {
+            if (context.song) {
+              matchedSong = context.song;
+            } else if (context.gameHistory && context.gameHistory.length > 0) {
+              matchedSong = context.gameHistory[0]!.song;
+            }
+          }
+        }
+
+        if (matchedSong && matchedSong.songId) {
           extra = {
-            songId: matchedSong.song.songId,
-            snippetStartS: matchedSong.song.snippetStartS ?? 30,
-            snippetLenS: matchedSong.song.snippetLenS ?? undefined,
-          };
-        } else if (context.winningTimeline && context.winningTimeline.length > 0) {
-          const s = context.winningTimeline[i % context.winningTimeline.length]!;
-          extra = {
-            songId: s.songId,
-            snippetStartS: s.snippetStartS,
-            snippetLenS: s.snippetLenS ?? undefined,
+            songId: matchedSong.songId,
+            snippetStartS: matchedSong.snippetStartS ?? 30,
+            snippetLenS: matchedSong.snippetLenS ?? undefined,
           };
         }
       }
