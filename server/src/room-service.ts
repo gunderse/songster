@@ -1473,6 +1473,12 @@ export class RoomManager {
     const game = room.game;
     if (game === null) return;
 
+    if (room.config.narratorVoice === "cycle") {
+      const prevHost = game.hostName;
+      game.hostName = undefined;
+      game.hostPromise = emceeService.chooseHost("cycle", prevHost);
+    }
+
     // Find the next team (from turnIndex) that has a connected player.
     let attempts = 0;
     let team = game.teams[game.turnIndex % game.teams.length]!;
@@ -1501,6 +1507,19 @@ export class RoomManager {
     team.placerIndex += 1;
     game.used.add(song.songId);
     game.turnCounter += 1;
+
+    try {
+      this.db.prepare(`
+        INSERT INTO song_plays (song_id, title, artist, play_count, last_played_at)
+        VALUES (?, ?, ?, 1, ?)
+        ON CONFLICT(song_id) DO UPDATE SET
+          play_count = play_count + 1,
+          last_played_at = EXCLUDED.last_played_at
+      `).run(song.songId, song.title || "Unknown Title", song.artist || "Unknown Artist", Date.now());
+    } catch (err) {
+      logger.error({ error: getErrorMessage(err), songId: song.songId }, "failed to update song play stats");
+    }
+
     const lenS = song.snippetLenS ?? room.config.snippetLenS;
     game.active = {
       song,

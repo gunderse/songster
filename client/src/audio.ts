@@ -135,7 +135,22 @@ export function fadeOutSnippet(ms = 1600): void {
     snippetStopTimer = null;
   }
   fade(snippetEl, snippetEl.volume, 0, ms);
-  setTimeout(stopSnippet, ms + 80);
+  snippetStopTimer = setTimeout(stopSnippet, ms + 80);
+}
+
+/** Keep playing or restart the recent guess snippet at a low background volume. */
+export function continueRecentSnippet(url: string, startS: number): void {
+  if (!unlocked) return;
+  if (snippetStopTimer !== null) {
+    clearTimeout(snippetStopTimer);
+    snippetStopTimer = null;
+  }
+  const el = snippetEl;
+  if (el.src === url && !el.paused && el.currentTime > 0) {
+    fade(el, el.volume, 0.25, 400);
+    return;
+  }
+  playSnippet(url, startS, 9999, 0.25, false);
 }
 
 /** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */

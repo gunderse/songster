@@ -222,7 +222,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
         {active.distraction && (
           <div className="relative z-10 text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-2xl py-3 px-4 animate-pulse">
-            📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) deployed a DISTRACTION!
+            📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
           </div>
         )}
 
@@ -282,7 +282,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     room.config.specialsPerTeam > 0 &&
     myTeam !== null &&
     myTeam.tokens > 0 &&
-    active.steal === null;
+    !active.steal;
 
   const canDistract =
     active !== null &&
@@ -292,7 +292,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     room.config.specialsPerTeam > 0 &&
     myTeam !== null &&
     myTeam.tokens > 0 &&
-    active.distraction === null;
+    !active.distraction;
 
   const canSuggest =
     active !== null &&
@@ -399,7 +399,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
       {active !== null && active.distraction && (
         <p className="text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-xl py-2.5 px-4 relative z-10 animate-pulse">
-          📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) deployed a DISTRACTION!
+          📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
         </p>
       )}
 
@@ -427,7 +427,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
                 onClick={() => socket.emit("player:useDistraction")}
                 className="flex-1 rounded-xl bg-gradient-to-r from-rose-500 to-red-650 px-4 py-3.5 text-xs font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-rose-950/20"
               >
-                📢 Distract ({myTeam?.tokens ?? 0} left)
+                📢 Annoy ({myTeam?.tokens ?? 0} left)
               </button>
             )}
           </div>
@@ -689,7 +689,7 @@ function ReplayButton({ ready, disabled }: { ready: boolean; disabled?: boolean 
       onClick={() => socket.emit("player:replay")}
       className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
-      {disabled ? "🔇 Disabled by Distraction" : (ready ? "🔁 Replay audio" : "🔁 Playing…")}
+      {disabled ? "🔇 Disabled by Annoy" : (ready ? "🔁 Replay audio" : "🔁 Playing…")}
     </button>
   );
 }
@@ -703,7 +703,7 @@ function PlayMoreButton({ ready, disabled }: { ready: boolean; disabled?: boolea
       onClick={() => socket.emit("player:playMore")}
       className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
-      {disabled ? "🔇 Disabled by Distraction" : (ready ? "⏩ Play more…" : "⏩ Playing…")}
+      {disabled ? "🔇 Disabled by Annoy" : (ready ? "⏩ Play more…" : "⏩ Playing…")}
     </button>
   );
 }

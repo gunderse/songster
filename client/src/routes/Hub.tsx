@@ -10,6 +10,7 @@ import {
   audioUnlocked,
   burstConfetti,
   fadeOutSnippet,
+  continueRecentSnippet,
   playCues,
   playSfx,
   playSnippet,
@@ -214,6 +215,19 @@ export function Hub({ code }: { code: string }) {
     }
     prevCountdownEndsAtRef.current = current;
   }, [room?.game?.countdownEndsAt]);
+
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const activeTurn = room?.game?.activeTurn;
+    const phase = activeTurn?.phase ?? null;
+    const prevPhase = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+
+    if (phase === "suspense" && prevPhase === "placing" && pendingSnippetRef.current !== null) {
+      const pending = pendingSnippetRef.current;
+      continueRecentSnippet(pending.url, pending.startS);
+    }
+  }, [room?.game?.activeTurn?.phase]);
 
   if (error !== null) {
     return (

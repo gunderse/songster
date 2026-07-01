@@ -6,8 +6,8 @@ import type { CreateAck, RoomConfig } from "@songster/shared/room";
 import {
   fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth, testPlexSettings,
   fetchAdminHealth, runAdminBenchmark, runShowcaseSmoketest, fetchActiveRooms, destroyRoom, destroyAllRooms,
-  audioStreamUrl, fetchSongs,
-  type AdminHealthResult, type BenchmarkResults, type BenchmarkPhase, type ActiveRoom,
+  audioStreamUrl, fetchSongs, fetchSongPlays, resetSongPlays, fetchShowcaseThemes,
+  type AdminHealthResult, type BenchmarkResults, type BenchmarkPhase, type ActiveRoom, type SongPlayStat, type ShowcaseThemeInfo,
 } from "../api";
 import type { ShowcaseView } from "@songster/shared/game";
 import { playCues, startBgMusic, stopBgMusic, stopCues, unlockAudio, playSnippet, stopSnippet } from "../audio";
@@ -35,8 +35,13 @@ export function Admin() {
   const [showcaseLeadChanges, setShowcaseLeadChanges] = useState(false);
   const [showcaseStreaks, setShowcaseStreaks] = useState(false);
   const [showcaseMilestones, setShowcaseMilestones] = useState(false);
-  const [narratorVoice, setNarratorVoice] = useState("random");
+  const [narratorVoice, setNarratorVoice] = useState("cycle");
   const [voices, setVoices] = useState<{ name: string; tags: string[] }[]>([]);
+  const [songPlays, setSongPlays] = useState<SongPlayStat[]>([]);
+
+  const loadPlays = () => {
+    fetchSongPlays().then(setSongPlays).catch(() => undefined);
+  };
 
   useEffect(() => {
     fetchFacets().then(setFacets).catch(() => undefined);
@@ -48,6 +53,7 @@ export function Admin() {
         }
       })
       .catch(() => undefined);
+    loadPlays();
   }, []);
 
   useEffect(() => {
@@ -83,6 +89,19 @@ export function Admin() {
     }
   }
 
+  async function handleResetPlays() {
+    if (!window.confirm("Are you sure you want to reset all song play statistics?")) return;
+    try {
+      const res = await resetSongPlays();
+      if (res.ok) {
+        setSongPlays([]);
+        loadPlays();
+      }
+    } catch (err) {
+      console.error("failed to reset song play stats:", err);
+    }
+  }
+
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
@@ -101,7 +120,7 @@ export function Admin() {
       showcaseLeadChanges,
       showcaseStreaks,
       showcaseMilestones,
-      narratorVoice: narratorVoice !== "random" ? narratorVoice : undefined,
+      narratorVoice,
     };
     if (!socket.connected) socket.connect();
     socket.emit("room:create", { config }, (res: CreateAck) => {
@@ -159,6 +178,7 @@ export function Admin() {
               className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition font-semibold"
             >
               <option value="random">🎲 Random (Biased to Fraiser/Host voices)</option>
+              <option value="cycle">🔄 Cycle (new voice each turn)</option>
               {voices.map((v) => (
                 <option key={v.name} value={v.name}>
                   🎙️ {v.name} {v.tags.length > 0 ? `(${v.tags.slice(0, 2).join(", ")})` : ""}
@@ -267,6 +287,72 @@ export function Admin() {
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        </section>
+
+        {/* Played Songs Distribution Stats */}
+        <section className="mt-8 border-t border-slate-900 pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-slate-100">📊 Played Songs Statistics</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Distribution of songs played during all games.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={loadPlays}
+                className="rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-850 text-slate-300 px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+              >
+                🔄 Refresh
+              </button>
+              {songPlays.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetPlays}
+                  className="rounded-xl bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-450 px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+                >
+                  🗑️ Reset Stats
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            {songPlays.length === 0 ? (
+              <div className="rounded-xl border border-slate-850 bg-slate-950/60 p-6 text-center">
+                <p className="text-sm text-slate-600 italic">No songs have been played yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-850 bg-slate-900/40 text-slate-400 font-bold uppercase tracking-wider">
+                        <th className="p-3">Song Details</th>
+                        <th className="p-3 text-center w-24">Play Count</th>
+                        <th className="p-3 text-right w-44">Last Played At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850 text-slate-350">
+                      {songPlays.map((sp) => (
+                        <tr key={sp.songId} className="hover:bg-slate-900/30 transition">
+                          <td className="p-3 font-semibold">
+                            <span className="text-slate-100">{sp.title}</span>
+                            <span className="text-slate-500 ml-1.5 font-normal">by {sp.artist}</span>
+                          </td>
+                          <td className="p-3 text-center font-bold text-indigo-400 tabular-nums">
+                            {sp.playCount}
+                          </td>
+                          <td className="p-3 text-right text-slate-500 tabular-nums">
+                            {new Date(sp.lastPlayedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -684,7 +770,11 @@ function AiBenchmarkPanel() {
   const [showcasePlaying, setShowcasePlaying] = useState(false);
   const [activeCueIndex, setActiveCueIndex] = useState<number>(-1);
 
+  const [showcaseThemes, setShowcaseThemes] = useState<ShowcaseThemeInfo[]>([]);
+  const [selectedThemeId, setSelectedThemeId] = useState<string>("random");
+
   useEffect(() => {
+    fetchShowcaseThemes().then(setShowcaseThemes).catch(() => undefined);
     return () => {
       stopCues();
       stopBgMusic();
@@ -728,7 +818,11 @@ function AiBenchmarkPanel() {
     setSmoketestLatency(null);
     stopShowcasePlay();
     try {
-      const res = await runShowcaseSmoketest({ model, think });
+      const res = await runShowcaseSmoketest({
+        model,
+        think,
+        themeId: selectedThemeId !== "random" ? selectedThemeId : undefined,
+      });
       if (res.ok && res.showcase) {
         setShowcase(res.showcase);
         setSmoketestLatency(res.latencyMs ?? null);
@@ -888,6 +982,24 @@ function AiBenchmarkPanel() {
         <p className="text-xs text-slate-500 mt-0.5">
           Generate an expanded winning finale showcase for a fictional 5-turn game to test recap prompts, layout segments, and TTS voice generation.
         </p>
+
+        <div className="mt-4 max-w-xs">
+          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Showcase Theme (Smoke Test)</label>
+          <div className="mt-1">
+            <select
+              value={selectedThemeId}
+              onChange={(e) => setSelectedThemeId(e.target.value)}
+              className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-350 px-3 py-2 text-xs outline-none focus:border-indigo-500 transition font-semibold"
+            >
+              <option value="random">🎲 Random (Shuffle themes)</option>
+              {showcaseThemes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  🎬 {t.label} ({t.tagline})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         <div className="mt-4 flex gap-3">
           <button

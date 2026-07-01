@@ -37,7 +37,7 @@ export interface ShowcaseContext {
   }>;
 }
 
-interface ThemeConfig {
+export interface ThemeConfig {
   id: string;
   label: string;
   tagline: string;
@@ -48,7 +48,7 @@ interface ThemeConfig {
 }
 
 // Reuses the epyc-codex themes; persona tags match the live Voice API tags.
-const THEMES: ThemeConfig[] = [
+export const THEMES: ThemeConfig[] = [
   {
     id: "sportscast",
     label: "Sportscast",
@@ -131,7 +131,7 @@ const OLLAMA_TIMEOUT_MS = 120_000;
 
 export class ShowcaseService {
   /** Build a full themed showcase, or null if the AI services are unavailable. */
-  async build(context: ShowcaseContext, options?: { model?: string; think?: boolean }): Promise<ShowcaseView | null> {
+  async build(context: ShowcaseContext, options?: { model?: string; think?: boolean; themeId?: string }): Promise<ShowcaseView | null> {
     let characters: VoiceCharacter[];
     try {
       characters = await voiceGeneratorService.listCharacters();
@@ -141,7 +141,13 @@ export class ShowcaseService {
     }
     if (characters.length === 0) return null;
 
-    const theme = THEMES[Math.floor(Math.random() * THEMES.length)]!;
+    let theme = THEMES[Math.floor(Math.random() * THEMES.length)]!;
+    if (options?.themeId) {
+      const selected = THEMES.find((t) => t.id === options.themeId);
+      if (selected) {
+        theme = selected;
+      }
+    }
     const cast = pickCast(theme, characters);
     if (cast.host === null) return null;
 
@@ -285,6 +291,23 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
     const pool = matches.length > 0 ? matches : characters.filter((c) => c.name !== exclude);
     return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)]!.name : null;
   };
+
+  if (theme.id === "movie-review") {
+    const statlerChar = characters.find((c) => c.name.toLowerCase().includes("statler"));
+    const waldorfChar = characters.find((c) => c.name.toLowerCase().includes("waldorf"));
+    
+    let host = statlerChar ? statlerChar.name : null;
+    let cohost = waldorfChar ? waldorfChar.name : null;
+    
+    if (host === null) {
+      host = pick(theme.preferredPersonas.host, cohost);
+    }
+    if (cohost === null && theme.roles.cohost !== null) {
+      cohost = pick(theme.preferredPersonas.cohost, host);
+    }
+    return { host, cohost };
+  }
+
   const host = pick(theme.preferredPersonas.host, null);
   const cohost = theme.roles.cohost !== null ? pick(theme.preferredPersonas.cohost, host) : null;
   return { host, cohost };
@@ -292,6 +315,16 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
 
 function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host: string | null; cohost: string | null }): string {
   const song = context.song;
+  
+  let movieReviewStyleInstructions = "";
+  if (theme.id === "movie-review") {
+    movieReviewStyleInstructions = 
+      `For this movie-review theme, the speakers are Statler and Waldorf, the iconic grumpy old critics from The Muppet Show. ` +
+      `Keep them strictly in character as two old, grumpy, but extremely funny hecklers. ` +
+      `They should be relentless in their heckling, throwing sarcastic jabs at the contestants, the songs, and each other. ` +
+      `Host represents Statler (grumpy, sharp-tongued critic A) and cohost represents Waldorf (giggling, sarcastic critic B). ` +
+      `Write their banter with their signature cynical comedy style and classic back-and-forth heckling.`;
+  }
 
   if (context.reason === "finale") {
     const historyLines = context.gameHistory
@@ -313,6 +346,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
 
     return [
       `Write a grand finale segment in the style of ${theme.promptStyle} celebrating the end of the Songster game!`,
+      movieReviewStyleInstructions,
       `The game has just ended! Headline: ${context.headline}`,
       song !== null
         ? `The final winning song: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.`
@@ -338,6 +372,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
 
   return [
     `Write a short, funny segment in the style of ${theme.promptStyle}.`,
+    movieReviewStyleInstructions,
     `React to this moment in a music-timeline party game: ${context.headline}`,
     `The placing team guessed ${context.outcome === "correct" ? "CORRECTLY" : "WRONG"} — open the first cue by reacting to that.`,
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",

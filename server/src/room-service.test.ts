@@ -22,6 +22,7 @@ test("RoomManager pause and resume", () => {
     showcaseLeadChanges: false,
     showcaseStreaks: false,
     showcaseMilestones: false,
+    narratorVoice: "cycle",
   });
 
   assert.equal(room.game, null);

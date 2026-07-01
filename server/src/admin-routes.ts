@@ -6,7 +6,7 @@ import { logger } from "./logger.js";
 import { ollamaService } from "./ai/ollama-service.js";
 import { voiceGeneratorService } from "./ai/voice-generator-service.js";
 import { emceeService } from "./ai/emcee-service.js";
-import { showcaseService } from "./ai/showcase-service.js";
+import { showcaseService, THEMES, type ThemeConfig } from "./ai/showcase-service.js";
 import type { RoomManager } from "./room-service.js";
 import { openDatabase } from "./db.js";
 
@@ -209,8 +209,9 @@ export function createAdminRouter(manager: RoomManager): Router {
    * Body: { model?: string; think?: boolean }
    */
   router.post("/showcase-smoketest", async (req, res) => {
-    const model = (req.body as { model?: string }).model ?? ollamaModel;
-    const think = (req.body as { think?: boolean }).think !== false;
+    const { model, think, themeId } = req.body as { model?: string; think?: boolean; themeId?: string };
+    const selectedModel = model ?? ollamaModel;
+    const selectedThink = think !== false;
     const t0 = Date.now();
 
     let realSongs: Array<{ songId: string; title: string | null; artist: string | null; year: number; snippetStartS: number; snippetLenS: number | null }> = [];
@@ -323,7 +324,7 @@ export function createAdminRouter(manager: RoomManager): Router {
             snippetLenS: ts.snippetLenS,
           })),
         },
-        { model, think }
+        { model: selectedModel, think: selectedThink, themeId }
       );
 
       if (showcase === null) {
@@ -334,6 +335,39 @@ export function createAdminRouter(manager: RoomManager): Router {
       res.json({ ok: true, showcase, latencyMs: Date.now() - t0 });
     } catch (err) {
       logger.error({ error: getErrorMessage(err) }, "admin showcase smoketest failed");
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.get("/showcase-themes", (req, res) => {
+    try {
+      const themes = THEMES.map((t: ThemeConfig) => ({ id: t.id, label: t.label, tagline: t.tagline }));
+      res.json({ ok: true, themes });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.get("/song-plays", (req, res) => {
+    try {
+      const db = openDatabase();
+      const rows = db.prepare(`
+        SELECT song_id as songId, title, artist, play_count as playCount, last_played_at as lastPlayedAt 
+        FROM song_plays 
+        ORDER BY play_count DESC, last_played_at DESC
+      `).all();
+      res.json({ ok: true, stats: rows });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.post("/song-plays/reset", (req, res) => {
+    try {
+      const db = openDatabase();
+      db.prepare("DELETE FROM song_plays").run();
+      res.json({ ok: true });
+    } catch (err) {
       res.status(500).json({ ok: false, error: getErrorMessage(err) });
     }
   });

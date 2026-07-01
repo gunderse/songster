@@ -309,10 +309,38 @@ export interface ShowcaseSmoketestResult {
   latencyMs?: number;
 }
 
-export function runShowcaseSmoketest(options: { model: string; think: boolean }): Promise<ShowcaseSmoketestResult> {
+export interface ShowcaseThemeInfo {
+  id: string;
+  label: string;
+  tagline: string;
+}
+
+export function fetchShowcaseThemes(): Promise<ShowcaseThemeInfo[]> {
+  return http<{ ok: boolean; themes: ShowcaseThemeInfo[] }>("/api/admin/showcase-themes").then((r) => r.themes);
+}
+
+export function runShowcaseSmoketest(options: { model: string; think: boolean; themeId?: string }): Promise<ShowcaseSmoketestResult> {
   return http<ShowcaseSmoketestResult>("/api/admin/showcase-smoketest", {
     method: "POST",
     body: JSON.stringify(options),
+  });
+}
+
+export interface SongPlayStat {
+  songId: string;
+  title: string;
+  artist: string;
+  playCount: number;
+  lastPlayedAt: number;
+}
+
+export function fetchSongPlays(): Promise<SongPlayStat[]> {
+  return http<{ ok: boolean; stats: SongPlayStat[] }>("/api/admin/song-plays").then((r) => r.stats);
+}
+
+export function resetSongPlays(): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/admin/song-plays/reset", {
+    method: "POST",
   });
 }
 
