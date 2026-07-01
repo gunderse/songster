@@ -97,11 +97,20 @@ export const THEMES: ThemeConfig[] = [
   {
     id: "movie-review",
     label: "Movie Review",
-    tagline: "Two critics, one baffling result",
-    promptStyle: "a sharp, funny two-critic movie-review segment reacting to a bizarre turn",
+    tagline: "Two brutal critics roasting your terrible guesses",
+    promptStyle: "a brutal movie review style heckling session by two unforgiving, highly critical grumpy old critics who constantly mock, embarrass, and heckle the players and their music choices",
     roles: { host: "Critic A", cohost: "Critic B" },
     preferredPersonas: { host: ["wise", "sophisticated", "deep"], cohost: ["logical", "sarcastic", "irritable", "rogue"] },
     music: "movies.mp3",
+  },
+  {
+    id: "infomercial",
+    label: "90s Infomercial",
+    tagline: "Call now! Operators are standing by!",
+    promptStyle: "a cheesy, high-energy 90s TV infomercial pitchman selling a compilation CD or cassette of these songs",
+    roles: { host: "Pitchman", cohost: "Sidekick" },
+    preferredPersonas: { host: ["bold", "commanding", "funny", "energetic"], cohost: ["funny", "rogue", "comedic"] },
+    music: "popcorn.mp3",
   },
   {
     id: "beef",
@@ -295,10 +304,10 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
   if (theme.id === "movie-review") {
     const statlerChar = characters.find((c) => c.name.toLowerCase().includes("statler"));
     const waldorfChar = characters.find((c) => c.name.toLowerCase().includes("waldorf"));
-    
+
     let host = statlerChar ? statlerChar.name : null;
     let cohost = waldorfChar ? waldorfChar.name : null;
-    
+
     if (host === null) {
       host = pick(theme.preferredPersonas.host, cohost);
     }
@@ -315,15 +324,26 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
 
 function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host: string | null; cohost: string | null }): string {
   const song = context.song;
-  
+
   let movieReviewStyleInstructions = "";
   if (theme.id === "movie-review") {
-    movieReviewStyleInstructions = 
+    movieReviewStyleInstructions =
       `For this movie-review theme, the speakers are Statler and Waldorf, the iconic grumpy old critics from The Muppet Show. ` +
       `Keep them strictly in character as two old, grumpy, but extremely funny hecklers. ` +
-      `They should be relentless in their heckling, throwing sarcastic jabs at the contestants, the songs, and each other. ` +
-      `Host represents Statler (grumpy, sharp-tongued critic A) and cohost represents Waldorf (giggling, sarcastic critic B). ` +
-      `Write their banter with their signature cynical comedy style and classic back-and-forth heckling.`;
+      `They should be relentless and unforgiving in their heckling, throwing sarcastic, embarrassing, and sharp jabs at the contestants, the songs, their music knowledge, and each other. ` +
+      `The primary goal of their criticism is to completely embarrass and humiliate the players for their terrible guesses or performance. ` +
+      `Host represents Statler (grumpy, sharp-tongued critic A) and cohost represents Waldorf (giggling, sarcastic, mocking critic B). Both firing jabs at every turn, and cackling loudly at their own jokes.  ` +
+      `Write their banter with their signature cynical comedy style and classic back-and-forth heckling, laughing at the players' incompetence.`;
+  }
+
+  let infomercialStyleInstructions = "";
+  if (theme.id === "infomercial") {
+    infomercialStyleInstructions =
+      `For this 90s Infomercial theme, the segment must be a hilarious, cheesy, tongue-in-cheek, relentless late-night TV infomercial sales pitch. ` +
+      `The host is a fast-talking, overly enthusiastic Pitchman and the cohost is an excited, gullible Sidekick. ` +
+      `They are selling a cheesy compilation CD or cassette (like 'Monster Hits 90s' or 'Now That's What I Call Songster!') featuring the songs from this game. ` +
+      `Use classic 90s infomercial tropes: 'But wait, there's more!', 'Not sold in stores!', 'Call in the next 10 minutes!', 'Operators are standing by!', and price pitches (e.g., 'Only 4 easy payments of $19.99!'). ` +
+      `Keep the energy incredibly high, ridiculous, and commercialized, referencing the song(s) or artist(s) as featured tracks on the compilation.`;
   }
 
   if (context.reason === "finale") {
@@ -347,6 +367,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
     return [
       `Write a grand finale segment in the style of ${theme.promptStyle} celebrating the end of the Songster game!`,
       movieReviewStyleInstructions,
+      infomercialStyleInstructions,
       `The game has just ended! Headline: ${context.headline}`,
       song !== null
         ? `The final winning song: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.`
@@ -356,9 +377,9 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
       `Your task is to write a longer, highly detailed, and extremely entertaining review of the key moments in this game.`,
       `Incorporate specific mentions of players, highlight key turn outcomes (e.g. correct answers or epic steals).`,
       `To make the wrap up highly engaging, explicitly reference specific song titles or artists from the recap in the dialogue. When a speaker brings up a song, they should say its title or artist clearly.`,
-      `Write a longer, detailed showcase segment with 5-7 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
+      `Write a longer, detailed showcase segment with exactly 5-7 cues total (strictly no more than 8 cues). Switch speakers back and forth.`,
       `The final cue must be a short, dedicated outro/sign-off segment (e.g., a goodbye or wrap-up statement from the hosts).`,
-      `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
+      `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions. Do NOT generate more than 8 cues in total.`,
       `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!'). Do NOT use closing tags like '[/emphasis]'.`,
       'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
       `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null
@@ -373,6 +394,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
   return [
     `Write a short, funny segment in the style of ${theme.promptStyle}.`,
     movieReviewStyleInstructions,
+    infomercialStyleInstructions,
     `React to this moment in a music-timeline party game: ${context.headline}`,
     `The placing team guessed ${context.outcome === "correct" ? "CORRECTLY" : "WRONG"} — open the first cue by reacting to that.`,
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
