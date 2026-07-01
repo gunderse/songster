@@ -54,7 +54,7 @@ const OLLAMA_TIMEOUT_MS = 45_000;
 
 export class EmceeService {
   /** Pick one host for the game: a random host-tagged voice, biased toward Ouldeon. */
-  async chooseHost(): Promise<string | null> {
+  async chooseHost(preferredHostName?: string, excludeHostName?: string | null): Promise<string | null> {
     let characters: VoiceCharacter[];
     try {
       characters = await voiceGeneratorService.listCharacters();
@@ -64,8 +64,24 @@ export class EmceeService {
     }
     if (characters.length === 0) return null;
 
+    if (preferredHostName && preferredHostName !== "random" && preferredHostName !== "cycle") {
+      const found = characters.find((c) => c.name.toLowerCase() === preferredHostName.toLowerCase());
+      if (found) {
+        logger.info({ host: found.name, tags: found.tags }, "emcee host chosen (preferred)");
+        return found.name;
+      }
+    }
+
     const hostLike = characters.filter((c) => c.tags.some((t) => HOST_TAGS.includes(t)));
-    const pool = hostLike.length > 0 ? hostLike : characters;
+    let pool = hostLike.length > 0 ? hostLike : characters;
+
+    if (excludeHostName) {
+      const filtered = pool.filter((c) => c.name.toLowerCase() !== excludeHostName.toLowerCase());
+      if (filtered.length > 0) {
+        pool = filtered;
+      }
+    }
+
     const preferred = pool.find((c) => c.name.toLowerCase() === PREFERRED_HOST.toLowerCase());
     const weighted = preferred !== undefined ? [preferred, preferred, ...pool] : pool;
     const chosen = weighted[Math.floor(Math.random() * weighted.length)]!;
@@ -159,6 +175,7 @@ export class EmceeService {
     nextPlayerName: string | null,
     teamsConfig: { hasMultipleMembers: boolean }
   ): Promise<string> {
+    const teamNames = teamsWithPlayers.map((t) => t.name);
     const characters = await voiceGeneratorService.listCharacters().catch(() => [] as VoiceCharacter[]);
     const tags = characters.find((c) => c.name === hostName)?.tags ?? [];
     const persona = tags.length > 0 ? tags.join(", ") : "charismatic";

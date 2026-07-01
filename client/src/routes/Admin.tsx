@@ -6,13 +6,14 @@ import type { CreateAck, RoomConfig } from "@songster/shared/room";
 import {
   fetchFacets, fetchPlexSettings, savePlexSettings, requestPlexPin, checkPlexAuth, testPlexSettings,
   fetchAdminHealth, runAdminBenchmark, runShowcaseSmoketest, fetchActiveRooms, destroyRoom, destroyAllRooms,
-  audioStreamUrl, fetchSongs,
-  type AdminHealthResult, type BenchmarkResults, type BenchmarkPhase, type ActiveRoom,
+  audioStreamUrl, fetchSongs, fetchSongPlays, resetSongPlays, fetchShowcaseThemes,
+  type AdminHealthResult, type BenchmarkResults, type BenchmarkPhase, type ActiveRoom, type SongPlayStat, type ShowcaseThemeInfo,
 } from "../api";
 import type { ShowcaseView } from "@songster/shared/game";
 import { playCues, startBgMusic, stopBgMusic, stopCues, unlockAudio, playSnippet, stopSnippet } from "../audio";
 import { socket } from "../socket";
 import { Roster } from "../components/Roster";
+import { ShowcaseOverlay } from "../components/ShowcaseOverlay";
 import { hubUrl, joinUrl, useRoomState } from "../useRoom";
 
 export function Admin() {
@@ -26,7 +27,7 @@ export function Admin() {
   const [targetLength, setTargetLength] = useState(7);
   const [tokens, setTokens] = useState(2);
   const [snippetLen, setSnippetLen] = useState(30);
-  const [turnTimer, setTurnTimer] = useState(45);
+  const [turnTimer, setTurnTimer] = useState(60);
   const [genres, setGenres] = useState<string[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [musicSource, setMusicSource] = useState<"local" | "plex" | "all">("all");
@@ -34,9 +35,25 @@ export function Admin() {
   const [showcaseLeadChanges, setShowcaseLeadChanges] = useState(false);
   const [showcaseStreaks, setShowcaseStreaks] = useState(false);
   const [showcaseMilestones, setShowcaseMilestones] = useState(false);
+  const [narratorVoice, setNarratorVoice] = useState("cycle");
+  const [voices, setVoices] = useState<{ name: string; tags: string[] }[]>([]);
+  const [songPlays, setSongPlays] = useState<SongPlayStat[]>([]);
+
+  const loadPlays = () => {
+    fetchSongPlays().then(setSongPlays).catch(() => undefined);
+  };
 
   useEffect(() => {
     fetchFacets().then(setFacets).catch(() => undefined);
+    fetch("/api/admin/voices")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.ok && Array.isArray(data.voices)) {
+          setVoices(data.voices);
+        }
+      })
+      .catch(() => undefined);
+    loadPlays();
   }, []);
 
   useEffect(() => {
@@ -72,6 +89,19 @@ export function Admin() {
     }
   }
 
+  async function handleResetPlays() {
+    if (!window.confirm("Are you sure you want to reset all song play statistics?")) return;
+    try {
+      const res = await resetSongPlays();
+      if (res.ok) {
+        setSongPlays([]);
+        loadPlays();
+      }
+    } catch (err) {
+      console.error("failed to reset song play stats:", err);
+    }
+  }
+
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
   }
@@ -81,7 +111,7 @@ export function Admin() {
     const config: RoomConfig = {
       teamCount,
       targetLength,
-      tokensPerPlayer: tokens,
+      specialsPerTeam: tokens,
       snippetLenS: snippetLen,
       turnTimerS: turnTimer,
       deck: { genres: genres.length > 0 ? genres : undefined, tags: tags.length > 0 ? tags : undefined },
@@ -90,6 +120,7 @@ export function Admin() {
       showcaseLeadChanges,
       showcaseStreaks,
       showcaseMilestones,
+      narratorVoice,
     };
     if (!socket.connected) socket.connect();
     socket.emit("room:create", { config }, (res: CreateAck) => {
@@ -107,7 +138,7 @@ export function Admin() {
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <NumberField label="Teams" value={teamCount} min={2} max={4} onChange={setTeamCount} />
           <NumberField label="Win at" value={targetLength} min={3} max={20} onChange={setTargetLength} />
-          <NumberField label="Tokens/player" value={tokens} min={0} max={5} onChange={setTokens} />
+          <NumberField label="Specials/team" value={tokens} min={0} max={10} onChange={setTokens} />
           <NumberField label="Snippet s" value={snippetLen} min={5} max={60} onChange={setSnippetLen} />
           <NumberField label="Turn timer s" value={turnTimer} min={0} max={180} onChange={setTurnTimer} />
         </div>
@@ -135,6 +166,25 @@ export function Admin() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Narrator Voice</label>
+          <div className="mt-2">
+            <select
+              value={narratorVoice}
+              onChange={(e) => setNarratorVoice(e.target.value)}
+              className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition font-semibold"
+            >
+              <option value="random">🎲 Random (Biased to Fraiser/Host voices)</option>
+              <option value="cycle">🔄 Cycle (new voice each turn)</option>
+              {voices.map((v) => (
+                <option key={v.name} value={v.name}>
+                  🎙️ {v.name} {v.tags.length > 0 ? `(${v.tags.slice(0, 2).join(", ")})` : ""}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -240,6 +290,72 @@ export function Admin() {
             )}
           </div>
         </section>
+
+        {/* Played Songs Distribution Stats */}
+        <section className="mt-8 border-t border-slate-900 pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-black text-slate-100">📊 Played Songs Statistics</h2>
+              <p className="text-xs text-slate-500 mt-0.5">Distribution of songs played during all games.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={loadPlays}
+                className="rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-850 text-slate-300 px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+              >
+                🔄 Refresh
+              </button>
+              {songPlays.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetPlays}
+                  className="rounded-xl bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-450 px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+                >
+                  🗑️ Reset Stats
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4">
+            {songPlays.length === 0 ? (
+              <div className="rounded-xl border border-slate-850 bg-slate-950/60 p-6 text-center">
+                <p className="text-sm text-slate-600 italic">No songs have been played yet.</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-850 bg-slate-900/40 text-slate-400 font-bold uppercase tracking-wider">
+                        <th className="p-3">Song Details</th>
+                        <th className="p-3 text-center w-24">Play Count</th>
+                        <th className="p-3 text-right w-44">Last Played At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850 text-slate-350">
+                      {songPlays.map((sp) => (
+                        <tr key={sp.songId} className="hover:bg-slate-900/30 transition">
+                          <td className="p-3 font-semibold">
+                            <span className="text-slate-100">{sp.title}</span>
+                            <span className="text-slate-500 ml-1.5 font-normal">by {sp.artist}</span>
+                          </td>
+                          <td className="p-3 text-center font-bold text-indigo-400 tabular-nums">
+                            {sp.playCount}
+                          </td>
+                          <td className="p-3 text-right text-slate-500 tabular-nums">
+                            {new Date(sp.lastPlayedAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
       </main>
     );
   }
@@ -314,6 +430,30 @@ export function Admin() {
                     {bot.name} ✕
                   </button>
                 ))}
+            </div>
+          )}
+
+          {room.status === "playing" && (
+            <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+              <h3 className="text-sm font-bold text-slate-350">🎮 Game Controls</h3>
+              <div className="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={() => socket.emit(room.game?.paused ? "room:resume" : "room:pause", { code })}
+                  className="rounded-lg bg-slate-800 hover:bg-slate-750 border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition active:scale-[0.98] cursor-pointer"
+                >
+                  {room.game?.paused ? "▶ Resume Game" : "⏸ Pause Game"}
+                </button>
+                {room.game?.countdownEndsAt !== null && room.game?.countdownReady && (
+                  <button
+                    type="button"
+                    onClick={() => socket.emit("room:skipIntro", { code })}
+                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-4 py-2 text-xs font-bold text-white transition active:scale-[0.98] cursor-pointer"
+                  >
+                    ⏩ Skip Intro
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -630,7 +770,11 @@ function AiBenchmarkPanel() {
   const [showcasePlaying, setShowcasePlaying] = useState(false);
   const [activeCueIndex, setActiveCueIndex] = useState<number>(-1);
 
+  const [showcaseThemes, setShowcaseThemes] = useState<ShowcaseThemeInfo[]>([]);
+  const [selectedThemeId, setSelectedThemeId] = useState<string>("random");
+
   useEffect(() => {
+    fetchShowcaseThemes().then(setShowcaseThemes).catch(() => undefined);
     return () => {
       stopCues();
       stopBgMusic();
@@ -657,7 +801,7 @@ function AiBenchmarkPanel() {
       } else {
         setActiveCueIndex(idx);
       }
-    });
+    }, showcase.reason === "finale");
   };
 
   const stopShowcasePlay = () => {
@@ -674,7 +818,11 @@ function AiBenchmarkPanel() {
     setSmoketestLatency(null);
     stopShowcasePlay();
     try {
-      const res = await runShowcaseSmoketest({ model, think });
+      const res = await runShowcaseSmoketest({
+        model,
+        think,
+        themeId: selectedThemeId !== "random" ? selectedThemeId : undefined,
+      });
       if (res.ok && res.showcase) {
         setShowcase(res.showcase);
         setSmoketestLatency(res.latencyMs ?? null);
@@ -835,6 +983,24 @@ function AiBenchmarkPanel() {
           Generate an expanded winning finale showcase for a fictional 5-turn game to test recap prompts, layout segments, and TTS voice generation.
         </p>
 
+        <div className="mt-4 max-w-xs">
+          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Showcase Theme (Smoke Test)</label>
+          <div className="mt-1">
+            <select
+              value={selectedThemeId}
+              onChange={(e) => setSelectedThemeId(e.target.value)}
+              className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-350 px-3 py-2 text-xs outline-none focus:border-indigo-500 transition font-semibold"
+            >
+              <option value="random">🎲 Random (Shuffle themes)</option>
+              {showcaseThemes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  🎬 {t.label} ({t.tagline})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         <div className="mt-4 flex gap-3">
           <button
             type="button"
@@ -879,42 +1045,31 @@ function AiBenchmarkPanel() {
 
             {/* Showcase Visual Live Player Representation */}
             <div className="relative overflow-hidden rounded-2xl bg-slate-950 border border-slate-900 p-6 flex flex-col justify-between min-h-[300px]">
-              {/* background preview mockup */}
-              <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/20 via-slate-950/40 to-slate-950 pointer-events-none" />
+              {showcasePlaying && activeCueIndex >= 0 ? (
+                <ShowcaseOverlay view={showcase} cueIndex={activeCueIndex} />
+              ) : (
+                <>
+                  {/* background preview mockup */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/20 via-slate-950/40 to-slate-950 pointer-events-none" />
 
-              <div className="relative z-10 flex justify-between items-start">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-400">🎬 {showcase.themeLabel}</span>
-                  <div className="text-xs text-slate-400 mt-0.5">{showcase.tagline}</div>
-                </div>
-                {showcasePlaying && (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-950/40 border border-emerald-800/30 px-2 py-0.5 rounded-full animate-pulse">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    Playing
-                  </span>
-                )}
-              </div>
-
-              {/* Showcase active cue rendering */}
-              <div className="relative z-10 my-8 max-w-2xl mx-auto text-center">
-                {showcasePlaying && activeCueIndex >= 0 && showcase.cues[activeCueIndex] ? (
-                  <>
-                    <div className="text-xs font-bold uppercase tracking-wider text-amber-200 mb-1">
-                      {showcase.cues[activeCueIndex]!.characterName ?? showcase.cues[activeCueIndex]!.speakerLabel}
+                  <div className="relative z-10 flex justify-between items-start">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-[0.25em] text-amber-400">🎬 {showcase.themeLabel}</span>
+                      <div className="text-xs text-slate-400 mt-0.5">{showcase.tagline}</div>
                     </div>
-                    <p className="text-xl sm:text-2xl font-black text-slate-100 leading-relaxed italic drop-shadow-md">
-                      “{showcase.cues[activeCueIndex]!.text}”
-                    </p>
-                  </>
-                ) : (
-                  <div className="text-slate-500 text-sm italic">
-                    Click "Play Showcase Preview" to start narration and playback.
                   </div>
-                )}
-              </div>
+
+                  {/* Showcase active cue rendering */}
+                  <div className="relative z-10 my-8 max-w-2xl mx-auto text-center">
+                    <div className="text-slate-500 text-sm italic">
+                      Click "Play Showcase Preview" to start narration and playback.
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Progress bar dot counts */}
-              <div className="relative z-10 flex justify-center gap-2 mt-4">
+              <div className="relative z-35 flex justify-center gap-2 mt-4">
                 {showcase.cues.map((_, i) => (
                   <span
                     key={i}
@@ -957,7 +1112,7 @@ function HubAudioSmokeTestPanel() {
   async function loadSongs() {
     setLoading(true);
     try {
-      const list = await fetchSongs({ limit: 50 });
+      const list = await fetchSongs({});
       setSongs(list);
     } catch {
       // ignore

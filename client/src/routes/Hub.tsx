@@ -10,12 +10,15 @@ import {
   audioUnlocked,
   burstConfetti,
   fadeOutSnippet,
+  continueRecentSnippet,
   playCues,
   playSfx,
   playSnippet,
   playVoiceUrl,
   startBgMusic,
   stopBgMusic,
+  playDistraction,
+  stopDistraction,
   stopCues,
   stopSnippet,
   stopVoice,
@@ -41,6 +44,7 @@ export function Hub({ code }: { code: string }) {
   const pendingSnippetRef = useRef<{ url: string; startS: number; lenS: number; until: number } | null>(null);
   const voiceTimerRef = useRef<number | undefined>(undefined);
   const audioOffTimerRef = useRef<number | undefined>(undefined);
+  const prevCountdownEndsAtRef = useRef<number | null | undefined>(undefined);
 
   function setAudioFor(ms: number) {
     setAudioActive(true);
@@ -60,6 +64,7 @@ export function Hub({ code }: { code: string }) {
       stopVoice();
       stopCues();
       stopBgMusic();
+      stopDistraction();
       setShowcase(null);
       const url = audioStreamUrl(payload.songId);
       // Remember it so a late audio-unlock can replay the in-progress snippet.
@@ -72,6 +77,7 @@ export function Hub({ code }: { code: string }) {
       // Fade the song out, then let the host speak after a beat (not an abrupt cut).
       // audioUrl null = caption-only fallback (Voice API failed); still show the line.
       fadeOutSnippet(1600);
+      stopDistraction();
       setEmcee({ hostName: payload.hostName, text: payload.text });
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       if (payload.audioUrl !== null) {
@@ -82,6 +88,7 @@ export function Hub({ code }: { code: string }) {
     function onShowcase(view: ShowcaseView) {
       fadeOutSnippet(900);
       stopVoice();
+      stopDistraction();
       setEmcee(null);
       setShowcase(view);
       setShowcaseCue(0);
@@ -98,7 +105,10 @@ export function Hub({ code }: { code: string }) {
         } else {
           setShowcaseCue(i);
         }
-      });
+      }, view.reason === "finale");
+    }
+    function onDistraction(payload: { url: string }) {
+      playDistraction(payload.url);
     }
 
     function onDestroyed() {
@@ -108,6 +118,7 @@ export function Hub({ code }: { code: string }) {
     socket.on("audio:play", onAudio);
     socket.on("emcee:play", onEmcee);
     socket.on("showcase:play", onShowcase);
+    socket.on("audio:distraction", onDistraction);
     socket.on("room:destroyed", onDestroyed);
     if (!socket.connected) socket.connect();
     else register();
@@ -117,6 +128,7 @@ export function Hub({ code }: { code: string }) {
       socket.off("audio:play", onAudio);
       socket.off("emcee:play", onEmcee);
       socket.off("showcase:play", onShowcase);
+      socket.off("audio:distraction", onDistraction);
       socket.off("room:destroyed", onDestroyed);
       if (voiceTimerRef.current !== undefined) window.clearTimeout(voiceTimerRef.current);
       if (audioOffTimerRef.current !== undefined) window.clearTimeout(audioOffTimerRef.current);
@@ -192,6 +204,31 @@ export function Hub({ code }: { code: string }) {
     }
   }, [room]);
 
+  // Clear emcee bubble/voice only when countdown transitions from non-null → null (intro finished or skipped)
+  useEffect(() => {
+    const current = room?.game?.countdownEndsAt ?? null;
+    const prev = prevCountdownEndsAtRef.current;
+    // prev === undefined means first render — skip
+    if (prev !== undefined && prev !== null && current === null) {
+      setEmcee(null);
+      stopVoice();
+    }
+    prevCountdownEndsAtRef.current = current;
+  }, [room?.game?.countdownEndsAt]);
+
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const activeTurn = room?.game?.activeTurn;
+    const phase = activeTurn?.phase ?? null;
+    const prevPhase = prevPhaseRef.current;
+    prevPhaseRef.current = phase;
+
+    if (phase === "suspense" && prevPhase === "placing" && pendingSnippetRef.current !== null) {
+      const pending = pendingSnippetRef.current;
+      continueRecentSnippet(pending.url, pending.startS);
+    }
+  }, [room?.game?.activeTurn?.phase]);
+
   if (error !== null) {
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-slate-950 text-slate-100">
@@ -253,7 +290,7 @@ export function Hub({ code }: { code: string }) {
       {showcase !== null && <ShowcaseOverlay view={showcase} cueIndex={showcaseCue} />}
 
       {/* Pre-game countdown overlay */}
-      {countdownEndsAt !== null && <Countdown endsAt={countdownEndsAt} ready={countdownReady} emcee={emcee} />}
+      {countdownEndsAt !== null && <Countdown endsAt={countdownEndsAt} ready={countdownReady} emcee={emcee} code={code} />}
 
       {/* Paused Overlay */}
       {room?.game?.paused && (
@@ -345,7 +382,7 @@ export function Hub({ code }: { code: string }) {
                     {room.game.paused ? "▶ Resume" : "⏸ Pause"}
                   </button>
                 )}
-                {room?.game && room.game.active && room.game.active.phase === "placing" && (
+                {room?.game && room.game.activeTurn && room.game.activeTurn.phase === "placing" && (
                   <button
                     type="button"
                     onClick={skipSong}
@@ -440,7 +477,7 @@ function LobbyView({
   );
 }
 
-function Countdown({ endsAt, ready, emcee }: { endsAt: number; ready: boolean; emcee: { hostName: string; text: string } | null }) {
+function Countdown({ endsAt, ready, emcee, code }: { endsAt: number; ready: boolean; emcee: { hostName: string; text: string } | null; code: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 200);
@@ -499,8 +536,18 @@ function Countdown({ endsAt, ready, emcee }: { endsAt: number; ready: boolean; e
           className="mt-8 mx-auto max-w-xl text-center bg-slate-900/60 border border-white/5 rounded-2xl p-5 backdrop-blur-md shadow-lg"
         >
           <div className="text-xs font-bold uppercase tracking-[0.3em] text-amber-400">🎙 {emcee.hostName}</div>
-          <p className="mt-2 text-base font-medium italic text-slate-200 leading-relaxed">“{emcee.text}”</p>
+          <p className="mt-2 text-base font-medium italic text-slate-200 leading-relaxed">"{emcee.text}"</p>
         </motion.div>
+      )}
+
+      {ready && (
+        <button
+          type="button"
+          className="pointer-events-auto mt-8 rounded-xl bg-slate-800/80 hover:bg-slate-700/90 border border-white/10 px-7 py-3 text-sm font-bold text-slate-300 hover:text-white transition active:scale-[0.98] cursor-pointer backdrop-blur-sm shadow-lg"
+          onClick={() => socket.emit("room:skipIntro", { code })}
+        >
+          ⏩ Skip Intro
+        </button>
       )}
     </div>
   );

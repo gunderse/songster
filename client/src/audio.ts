@@ -31,6 +31,7 @@ let snippetStopTimer: ReturnType<typeof setTimeout> | null = null;
 const snippetEl = new Audio(SILENT_AUDIO);
 const voiceEl = new Audio(SILENT_AUDIO);
 const bgEl = new Audio(SILENT_AUDIO);
+const distractionEl = new Audio(SILENT_AUDIO);
 const sfxCorrectEl = new Audio("/effects/correct.mp3");
 const sfxIncorrectEl = new Audio("/effects/incorrect.mp3");
 const sfxTimesUpEl = new Audio("/effects/times-up.mp3");
@@ -51,9 +52,12 @@ export function unlockAudio(): void {
   if (context.state !== "running") void context.resume();
 
   // Bless all audio elements synchronously inside this user gesture so Safari/iOS allows dynamic play
-  for (const el of [snippetEl, voiceEl, bgEl, sfxCorrectEl, sfxIncorrectEl, sfxTimesUpEl]) {
+  for (const el of [snippetEl, voiceEl, bgEl, distractionEl, sfxCorrectEl, sfxIncorrectEl, sfxTimesUpEl]) {
+    const originalSrc = el.src;
     void el.play().then(() => {
-      el.pause();
+      if (el.src === originalSrc) {
+        el.pause();
+      }
     }).catch(() => undefined);
   }
 }
@@ -68,7 +72,7 @@ function fade(el: HTMLAudioElement, from: number, to: number, ms: number): void 
   }, ms / steps);
 }
 
-export function playSnippet(url: string, startS: number, lenS: number, maxVolume = 1): void {
+export function playSnippet(url: string, startS: number, lenS: number, maxVolume = 1, autoStop = true): void {
   stopSnippet(false);
   if (!unlocked) return;
   const el = snippetEl;
@@ -95,13 +99,15 @@ export function playSnippet(url: string, startS: number, lenS: number, maxVolume
   void el.play().catch(() => undefined);
   fade(el, 0, maxVolume, 400);
 
-  snippetStopTimer = setTimeout(
-    () => {
-      fade(el, el.volume, 0, 500);
-      setTimeout(stopSnippet, 520);
-    },
-    Math.max(800, lenS * 1000 - 500),
-  );
+  if (autoStop) {
+    snippetStopTimer = setTimeout(
+      () => {
+        fade(el, el.volume, 0, 500);
+        setTimeout(stopSnippet, 520);
+      },
+      Math.max(800, lenS * 1000 - 500),
+    );
+  }
 }
 
 export function stopSnippet(releaseConnection = true): void {
@@ -129,7 +135,22 @@ export function fadeOutSnippet(ms = 1600): void {
     snippetStopTimer = null;
   }
   fade(snippetEl, snippetEl.volume, 0, ms);
-  setTimeout(stopSnippet, ms + 80);
+  snippetStopTimer = setTimeout(stopSnippet, ms + 80);
+}
+
+/** Keep playing or restart the recent guess snippet at a low background volume. */
+export function continueRecentSnippet(url: string, startS: number): void {
+  if (!unlocked) return;
+  if (snippetStopTimer !== null) {
+    clearTimeout(snippetStopTimer);
+    snippetStopTimer = null;
+  }
+  const el = snippetEl;
+  if (el.src === url && !el.paused && el.currentTime > 0) {
+    fade(el, el.volume, 0.25, 400);
+    return;
+  }
+  playSnippet(url, startS, 9999, 0.25, false);
 }
 
 /** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */
@@ -186,23 +207,47 @@ export function stopBgMusic(releaseConnection = true): void {
 }
 
 /** Play voiced cues in order. `onIndex(i)` advances captions; `onIndex(-1)` signals done. */
-export function playCues(cues: Array<{ audioUrl: string | null; durationMs: number; songId?: string; snippetStartS?: number; snippetLenS?: number }>, onIndex: (index: number) => void): void {
+export function playCues(
+  cues: Array<{ audioUrl: string | null; durationMs: number; songId?: string; snippetStartS?: number; snippetLenS?: number }>,
+  onIndex: (index: number) => void,
+  isFinale = false
+): void {
   stopVoice(false);
   const token = { cancelled: false };
   cueChain = token;
   let i = 0;
+  let activeSongId: string | null = null;
+
   const next = () => {
     if (token.cancelled) return;
     if (i >= cues.length) {
       onIndex(-1);
+      fadeOutSnippet();
       return;
     }
     const cue = cues[i]!;
     onIndex(i);
+
     const advance = () => {
-      i += 1;
-      next();
+      window.setTimeout(() => {
+        if (token.cancelled) return;
+        i += 1;
+        next();
+      }, isFinale ? 2500 : 400);
     };
+
+    const snippetVolume = isFinale ? 0.20 : 0.15;
+
+    // Transition or play song snippet if present and different from currently playing
+    if (cue.songId && unlocked) {
+      if (activeSongId !== cue.songId) {
+        activeSongId = cue.songId;
+        const snippetUrl = "/audio/" + cue.songId + "/stream";
+        const snippetStart = cue.snippetStartS ?? 30;
+        playSnippet(snippetUrl, snippetStart, 9999, snippetVolume, false);
+      }
+    }
+
     if (cue.audioUrl !== null && unlocked) {
       const el = voiceEl;
       el.src = cue.audioUrl;
@@ -211,21 +256,7 @@ export function playCues(cues: Array<{ audioUrl: string | null; durationMs: numb
       el.onerror = () => window.setTimeout(advance, 400);
       el.load();
       void el.play().catch(() => window.setTimeout(advance, cue.durationMs));
-
-      // Play the background song snippet concurrently if present
-      if (cue.songId) {
-        const snippetUrl = "/audio/" + cue.songId;
-        const snippetStart = cue.snippetStartS ?? 30;
-        const snippetDuration = Math.max(3, cue.durationMs / 1000);
-        playSnippet(snippetUrl, snippetStart, snippetDuration, 0.15);
-      }
     } else {
-      if (cue.songId && unlocked) {
-        const snippetUrl = "/audio/" + cue.songId;
-        const snippetStart = cue.snippetStartS ?? 30;
-        const snippetDuration = Math.max(3, cue.durationMs / 1000);
-        playSnippet(snippetUrl, snippetStart, snippetDuration, 0.15);
-      }
       window.setTimeout(advance, cue.durationMs);
     }
   };
@@ -237,6 +268,28 @@ export function stopCues(): void {
   cueChain = null;
   stopVoice();
   stopSnippet();
+  stopDistraction();
+}
+
+export function playDistraction(url: string): void {
+  if (!unlocked) return;
+  try {
+    distractionEl.src = url;
+    distractionEl.volume = 1.0;
+    distractionEl.load();
+    void distractionEl.play().catch(() => undefined);
+  } catch {
+    // ignore
+  }
+}
+
+export function stopDistraction(): void {
+  try {
+    distractionEl.pause();
+    distractionEl.src = SILENT_AUDIO;
+  } catch {
+    // ignore
+  }
 }
 
 interface Tone {

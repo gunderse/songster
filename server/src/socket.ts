@@ -87,6 +87,12 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
       manager.resumeGame(parsed.data.code);
     });
 
+    socket.on("room:skipIntro", (payload) => {
+      const parsed = roomCodeSchema.safeParse(payload);
+      if (!parsed.success) return;
+      manager.skipIntro(parsed.data.code);
+    });
+
     socket.on("admin:addBot", (payload) => {
       const parsed = roomCodeSchema.safeParse(payload);
       if (!parsed.success) return;
@@ -109,6 +115,14 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
 
     socket.on("player:useSkip", () => {
       manager.useSkip(socket.id);
+    });
+
+    socket.on("player:use5050", () => {
+      manager.use5050(socket.id);
+    });
+
+    socket.on("player:useDistraction", () => {
+      manager.useDistraction(socket.id);
     });
 
     socket.on("player:stealPlace", (payload) => {

@@ -42,6 +42,65 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     return <Centered>Loading…</Centered>;
   }
 
+  if (game.countdownEndsAt !== null) {
+    const msLeft = Math.max(0, game.countdownEndsAt - now);
+    const secsLeft = Math.ceil(msLeft / 1000);
+    const countdownReady = game.countdownReady;
+
+    // Before the intro clip is ready: show a neutral waiting screen (no Skip button)
+    if (!countdownReady) {
+      return (
+        <main className="relative flex min-h-dvh flex-col items-center justify-center gap-6 p-6 text-center text-slate-100 bg-slate-950 overflow-hidden">
+          <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-indigo-500/5 blur-[80px]" />
+          <div className="flex flex-col items-center gap-4 bg-slate-900/80 border border-white/5 p-8 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-w-sm">
+            <div className="relative flex items-center justify-center w-16 h-16 bg-slate-800 rounded-full border border-white/5">
+              <motion.div
+                className="absolute w-12 h-12 rounded-full border-4 border-transparent border-t-amber-400"
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
+              />
+              <span className="text-xl">🎙️</span>
+            </div>
+            <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-200 to-slate-400">
+              Preparing the show…
+            </h2>
+            <p className="text-sm text-slate-400">
+              Watch the Hub screen — your host is getting ready to introduce the teams!
+            </p>
+          </div>
+        </main>
+      );
+    }
+
+    // Intro clip is playing: show timer + Skip button
+    return (
+      <main className="relative flex min-h-dvh flex-col items-center justify-center gap-6 p-6 text-center text-slate-100 bg-slate-950 overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] h-[50%] w-[50%] rounded-full bg-indigo-500/5 blur-[80px]" />
+        <div className="flex flex-col items-center gap-4 bg-slate-900/80 border border-white/5 p-8 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-w-sm">
+          <div className="relative flex items-center justify-center w-16 h-16 bg-slate-800 rounded-full text-indigo-400 text-2xl font-bold border border-white/5 animate-bounce">
+            🎙️
+          </div>
+          <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-100 to-indigo-300">
+            Intro Narration
+          </h2>
+          <p className="text-sm text-slate-400">
+            Your host is introducing the teams on the Hub screen — listen up!
+          </p>
+          <div className="text-xs text-slate-500 font-semibold tabular-nums mt-1">
+            Game starts in {secsLeft}s…
+          </div>
+          <button
+            type="button"
+            onClick={() => socket.emit("room:skipIntro", { code: room.code })}
+            className="w-full mt-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/10 px-5 py-3 text-sm font-bold text-white transition active:scale-[0.98] cursor-pointer"
+          >
+            ⏩ Skip Intro
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // ── game over ─────────────────────────────────────────────────────────
   if (game.winnerTeamId !== null) {
     const won = game.winnerTeamId === me.teamId;
@@ -148,6 +207,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   if (amPlacer && active.phase === "placing") {
     const suggestions = active.suggestions ?? [];
     const deadlineMs = active.placeDeadline !== null ? Math.max(0, active.placeDeadline - now) : null;
+    const hasDistraction = !!active.distraction;
     return (
       <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
         {/* Glow ambient shapes */}
@@ -160,10 +220,16 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           {deadlineMs !== null && <TurnClock msLeft={deadlineMs} />}
         </div>
 
+        {active.distraction && (
+          <div className="relative z-10 text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-2xl py-3 px-4 animate-pulse">
+            📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
+          </div>
+        )}
+
         <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#6366f1"} onUse={(i) => setSelectedSlot(i)} />
 
         <div className="relative z-10 flex-1 flex flex-col justify-start">
-          <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} />
+          <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} eliminatedSlots={active.eliminatedSlots} />
         </div>
 
         <div className="mt-auto flex flex-col gap-2 relative z-10">
@@ -179,18 +245,29 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
           >
             {committed ? "Locked in…" : selectedSlot === null ? "Choose a slot above ↑" : "Lock in placement"}
           </button>
-          {!committed && me.tokens > 0 && (
-            <button
-              type="button"
-              onClick={() => socket.emit("player:useSkip")}
-              className="rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md px-4 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition active:scale-[0.98]"
-            >
-              🎟️ Use Skip token · {me.tokens} left
-            </button>
+          {!committed && room.config.specialsPerTeam > 0 && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={!(myTeam && myTeam.tokens > 0)}
+                onClick={() => socket.emit("player:useSkip")}
+                className="flex-1 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md px-3 py-3 text-xs font-semibold text-slate-350 hover:bg-slate-800 hover:text-white transition active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                🎟️ Skip Song ({myTeam?.tokens ?? 0} left)
+              </button>
+              <button
+                type="button"
+                disabled={!(myTeam && myTeam.tokens > 0) || (active.eliminatedSlots && active.eliminatedSlots.length > 0)}
+                onClick={() => socket.emit("player:use5050")}
+                className="flex-1 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md px-3 py-3 text-xs font-semibold text-slate-350 hover:bg-slate-800 hover:text-white transition active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                🌓 50/50
+              </button>
+            </div>
           )}
           <div className="flex gap-2">
-            <ReplayButton ready={now >= active.snippetPlayingUntil} />
-            <PlayMoreButton ready={now >= active.snippetPlayingUntil} />
+            <ReplayButton ready={now >= active.snippetPlayingUntil && !hasDistraction} disabled={hasDistraction} />
+            <PlayMoreButton ready={now >= active.snippetPlayingUntil && !hasDistraction} disabled={hasDistraction} />
           </div>
         </div>
       </main>
@@ -202,8 +279,20 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     active.phase === "placing" &&
     me.teamId !== null &&
     me.teamId !== active.teamId &&
-    me.tokens > 0 &&
-    active.steal === null;
+    room.config.specialsPerTeam > 0 &&
+    myTeam !== null &&
+    myTeam.tokens > 0 &&
+    !active.steal;
+
+  const canDistract =
+    active !== null &&
+    active.phase === "placing" &&
+    me.teamId !== null &&
+    me.teamId !== active.teamId &&
+    room.config.specialsPerTeam > 0 &&
+    myTeam !== null &&
+    myTeam.tokens > 0 &&
+    !active.distraction;
 
   const canSuggest =
     active !== null &&
@@ -308,21 +397,40 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
         )}
       </div>
 
+      {active !== null && active.distraction && (
+        <p className="text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-xl py-2.5 px-4 relative z-10 animate-pulse">
+          📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
+        </p>
+      )}
+
       {active !== null && me.teamId !== active.teamId && active.steal !== null && (
         <p className="text-center text-xs font-bold uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 rounded-xl py-2 px-4 relative z-10">
           🥷 {active.steal.playerName} is challenging with a STEAL!
         </p>
       )}
       
-      <div className="flex justify-center gap-3 relative z-10">
-        {canSteal && (
-          <button
-            type="button"
-            onClick={() => setStealMode(true)}
-            className="rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-3.5 text-sm font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-amber-950/20"
-          >
-            🥷 Steal card ({me.tokens} left)
-          </button>
+      <div className="flex flex-col gap-2 relative z-10 w-full max-w-sm mx-auto">
+        {room.config.specialsPerTeam > 0 && (canSteal || canDistract) && (
+          <div className="flex gap-2">
+            {canSteal && (
+              <button
+                type="button"
+                onClick={() => setStealMode(true)}
+                className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 py-3.5 text-xs font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-amber-950/20"
+              >
+                🥷 Steal card ({myTeam?.tokens ?? 0} left)
+              </button>
+            )}
+            {canDistract && (
+              <button
+                type="button"
+                onClick={() => socket.emit("player:useDistraction")}
+                className="flex-1 rounded-xl bg-gradient-to-r from-rose-500 to-red-650 px-4 py-3.5 text-xs font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-rose-950/20"
+              >
+                📢 Annoy ({myTeam?.tokens ?? 0} left)
+              </button>
+            )}
+          </div>
         )}
         {canSuggest && (
           <button
@@ -331,7 +439,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
               setSuggestSlot(mySuggestion?.index ?? null);
               setSuggestMode(true);
             }}
-            className="rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-950/20"
+            className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-indigo-950/20"
           >
             💡 {mySuggestion !== null ? "Change hint" : "Suggest slot"}
           </button>
@@ -367,8 +475,9 @@ function TimelinePicker(props: {
   onSelect: (index: number) => void;
   accent?: "emerald" | "amber";
   suggestionIndices?: number[];
+  eliminatedSlots?: number[];
 }) {
-  const { cards, teamColor, selected, onSelect, accent = "emerald", suggestionIndices = [] } = props;
+  const { cards, teamColor, selected, onSelect, accent = "emerald", suggestionIndices = [], eliminatedSlots = [] } = props;
   
   const selClass =
     accent === "amber"
@@ -388,19 +497,25 @@ function TimelinePicker(props: {
   for (let i = 0; i <= cards.length; i += 1) {
     const isSel = selected === i;
     const suggestN = suggestCount(i);
+    const isEliminated = eliminatedSlots.includes(i);
     rows.push(
       <motion.button
         key={`gap-${i}`}
         type="button"
-        whileTap={{ scale: 0.98 }}
-        onClick={() => onSelect(i)}
+        whileTap={isEliminated ? undefined : { scale: 0.98 }}
+        onClick={isEliminated ? undefined : () => onSelect(i)}
+        disabled={isEliminated}
         className={`w-full relative flex items-center justify-center gap-2 rounded-2xl border-2 py-4 text-xs font-bold uppercase tracking-wider transition-all duration-200 ${
-          isSel ? `${selClass} border-solid` : "border-dashed border-slate-800 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+          isEliminated
+            ? "border-rose-950/20 bg-rose-950/5 text-rose-500/40 line-through cursor-not-allowed opacity-40"
+            : isSel
+            ? `${selClass} border-solid`
+            : "border-dashed border-slate-800 bg-slate-900/20 text-slate-400 hover:border-slate-700 hover:text-slate-200"
         }`}
       >
-        <span className="text-sm">{isSel ? "✓" : "＋"}</span>
-        {gapLabel(i)}
-        {suggestN > 0 && (
+        <span className="text-sm">{isEliminated ? "✕" : (isSel ? "✓" : "＋")}</span>
+        {isEliminated ? "Eliminated" : gapLabel(i)}
+        {suggestN > 0 && !isEliminated && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-indigo-600 px-2 py-0.5 text-[9px] font-black text-white shadow-md animate-pulse">
             💡 {suggestN}
           </span>
@@ -417,8 +532,8 @@ function TimelinePicker(props: {
         >
           <div className="text-2xl font-black font-heading tabular-nums text-slate-100">{card.year}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-extrabold text-slate-200">{card.title ?? "—"}</div>
-            {card.artist !== null && <div className="truncate text-xs text-slate-400 font-semibold mt-0.5">{card.artist}</div>}
+            <div className="truncate text-sm font-extrabold text-slate-200">{card.isSeed ? "Initial Milestone" : (card.title ?? "—")}</div>
+            {card.artist !== null && !card.isSeed && <div className="truncate text-xs text-slate-400 font-semibold mt-0.5">{card.artist}</div>}
           </div>
         </div>,
       );
@@ -450,7 +565,7 @@ function MiniTimeline({ cards, teamColor }: { cards: TimelineCardView[]; teamCol
           style={{ borderTopColor: teamColor, borderTopWidth: 3 }}
         >
           <div className="text-lg font-black font-heading tabular-nums text-slate-100">{card.year}</div>
-          <div className="line-clamp-2 text-[10px] leading-tight text-slate-400 font-semibold mt-0.5">{card.title ?? ""}</div>
+          <div className="line-clamp-2 text-[10px] leading-tight text-slate-400 font-semibold mt-0.5">{card.isSeed ? "Initial Milestone" : (card.title ?? "")}</div>
         </div>
       ))}
       {cards.length === 0 && (
@@ -565,28 +680,30 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ReplayButton({ ready }: { ready: boolean }) {
+function ReplayButton({ ready, disabled }: { ready: boolean; disabled?: boolean }) {
+  const isDisable = !ready || disabled;
   return (
     <button
       type="button"
-      disabled={!ready}
+      disabled={isDisable}
       onClick={() => socket.emit("player:replay")}
       className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
-      {ready ? "🔁 Replay audio" : "🔁 Playing…"}
+      {disabled ? "🔇 Disabled by Annoy" : (ready ? "🔁 Replay audio" : "🔁 Playing…")}
     </button>
   );
 }
 
-function PlayMoreButton({ ready }: { ready: boolean }) {
+function PlayMoreButton({ ready, disabled }: { ready: boolean; disabled?: boolean }) {
+  const isDisable = !ready || disabled;
   return (
     <button
       type="button"
-      disabled={!ready}
+      disabled={isDisable}
       onClick={() => socket.emit("player:playMore")}
       className="flex-1 rounded-2xl border border-white/5 bg-slate-900/60 backdrop-blur-md px-4 py-3.5 text-xs font-bold text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-40 transition active:scale-[0.98]"
     >
-      {ready ? "⏩ Play more…" : "⏩ Playing…"}
+      {disabled ? "🔇 Disabled by Annoy" : (ready ? "⏩ Play more…" : "⏩ Playing…")}
     </button>
   );
 }

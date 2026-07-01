@@ -55,6 +55,10 @@ const manager = new RoomManager(db, {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("audio:play", audio);
   },
+  playDistractionToHubs: (code, payload) => {
+    const hubs = manager.hubSocketIds(code);
+    if (hubs.length > 0) io.to(hubs).emit("audio:distraction", payload);
+  },
   emceeToHubs: (code, payload) => {
     const hubs = manager.hubSocketIds(code);
     if (hubs.length > 0) io.to(hubs).emit("emcee:play", payload);

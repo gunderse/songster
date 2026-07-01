@@ -22,7 +22,7 @@ export interface ShowcaseContext {
     turnId: number;
     teamName: string;
     placerName: string;
-    song: { title: string | null; artist: string | null; year: number };
+    song: { songId?: string; title: string | null; artist: string | null; year: number };
     correct: boolean;
     steal: { stealerName: string; correct: boolean } | null;
     scoreAfter: number;
@@ -37,7 +37,7 @@ export interface ShowcaseContext {
   }>;
 }
 
-interface ThemeConfig {
+export interface ThemeConfig {
   id: string;
   label: string;
   tagline: string;
@@ -48,7 +48,7 @@ interface ThemeConfig {
 }
 
 // Reuses the epyc-codex themes; persona tags match the live Voice API tags.
-const THEMES: ThemeConfig[] = [
+export const THEMES: ThemeConfig[] = [
   {
     id: "sportscast",
     label: "Sportscast",
@@ -64,7 +64,7 @@ const THEMES: ThemeConfig[] = [
     tagline: "Tonight's top story",
     promptStyle: "a nightly news broadcast with an anchor tossing to a field reporter for dramatic updates",
     roles: { host: "Anchor", cohost: "Field reporter" },
-    preferredPersonas: { host: ["newscaster", "anchor", "authoritative", "professional"], cohost: ["logical", "calm", "wise"] },
+    preferredPersonas: { host: ["reporter", "newscaster", "anchor", "authoritative", "professional"], cohost: ["logical", "calm", "wise"] },
     music: "2020.mp3",
   },
   {
@@ -97,11 +97,20 @@ const THEMES: ThemeConfig[] = [
   {
     id: "movie-review",
     label: "Movie Review",
-    tagline: "Two critics, one baffling result",
-    promptStyle: "a sharp, funny two-critic movie-review segment reacting to a bizarre turn",
+    tagline: "Two brutal critics roasting your terrible guesses",
+    promptStyle: "a brutal movie review style heckling session by two unforgiving, highly critical grumpy old critics who constantly mock, embarrass, and heckle the players and their music choices",
     roles: { host: "Critic A", cohost: "Critic B" },
     preferredPersonas: { host: ["wise", "sophisticated", "deep"], cohost: ["logical", "sarcastic", "irritable", "rogue"] },
     music: "movies.mp3",
+  },
+  {
+    id: "infomercial",
+    label: "90s Infomercial",
+    tagline: "Call now! Operators are standing by!",
+    promptStyle: "a cheesy, high-energy 90s TV infomercial pitchman selling a compilation CD or cassette of these songs",
+    roles: { host: "Pitchman", cohost: "Sidekick" },
+    preferredPersonas: { host: ["bold", "commanding", "funny", "energetic"], cohost: ["funny", "rogue", "comedic"] },
+    music: "popcorn.mp3",
   },
   {
     id: "beef",
@@ -124,14 +133,14 @@ const THEMES: ThemeConfig[] = [
 ];
 
 const cueSchema = z.object({ speaker: z.enum(["host", "cohost"]), text: z.string().trim().min(1).max(220) });
-const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(8) });
+const scriptSchema = z.object({ cues: z.array(cueSchema).min(1).max(12) });
 type Cue = z.infer<typeof cueSchema>;
 
 const OLLAMA_TIMEOUT_MS = 120_000;
 
 export class ShowcaseService {
   /** Build a full themed showcase, or null if the AI services are unavailable. */
-  async build(context: ShowcaseContext, options?: { model?: string; think?: boolean }): Promise<ShowcaseView | null> {
+  async build(context: ShowcaseContext, options?: { model?: string; think?: boolean; themeId?: string }): Promise<ShowcaseView | null> {
     let characters: VoiceCharacter[];
     try {
       characters = await voiceGeneratorService.listCharacters();
@@ -141,7 +150,13 @@ export class ShowcaseService {
     }
     if (characters.length === 0) return null;
 
-    const theme = THEMES[Math.floor(Math.random() * THEMES.length)]!;
+    let theme = THEMES[Math.floor(Math.random() * THEMES.length)]!;
+    if (options?.themeId) {
+      const selected = THEMES.find((t) => t.id === options.themeId);
+      if (selected) {
+        theme = selected;
+      }
+    }
     const cast = pickCast(theme, characters);
     if (cast.host === null) return null;
 
@@ -177,13 +192,80 @@ export class ShowcaseService {
       }
 
       let extra = {};
-      if (context.reason === "finale" && context.winningTimeline && context.winningTimeline.length > 0) {
-        const s = context.winningTimeline[i % context.winningTimeline.length]!;
-        extra = {
-          songId: s.songId,
-          snippetStartS: s.snippetStartS,
-          snippetLenS: s.snippetLenS ?? undefined,
-        };
+      if (context.reason === "finale") {
+        let matchedSong: any = null;
+        const lowercaseText = cleanedText.toLowerCase();
+        if (context.gameHistory) {
+          const candidates = [...context.gameHistory].sort(
+            (a, b) => (b.song.title ?? "").length - (a.song.title ?? "").length
+          );
+          for (const candidate of candidates) {
+            if (!candidate.song.title) continue;
+
+            let cleanTitle = candidate.song.title.replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+            if (cleanTitle.length < 3) {
+              cleanTitle = candidate.song.title.toLowerCase();
+            }
+
+            let cleanArtist = (candidate.song.artist ?? "").replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+            if (cleanArtist.length < 3) {
+              cleanArtist = (candidate.song.artist ?? "").toLowerCase();
+            }
+
+            if (
+              (cleanTitle.length >= 3 && lowercaseText.includes(cleanTitle)) ||
+              (cleanArtist.length >= 3 && lowercaseText.includes(cleanArtist))
+            ) {
+              matchedSong = candidate.song;
+              break;
+            }
+          }
+        }
+
+        // If it's the very first cue, and no song matched yet, look ahead for the first song mentioned anywhere
+        if (i === 0 && !matchedSong) {
+          for (const otherCue of cues) {
+            const otherText = cleanDialogText(otherCue.text).toLowerCase();
+            if (context.gameHistory) {
+              const candidates = [...context.gameHistory].sort(
+                (a, b) => (b.song.title ?? "").length - (a.song.title ?? "").length
+              );
+              for (const candidate of candidates) {
+                if (!candidate.song.title) continue;
+                let cleanTitle = candidate.song.title.replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+                if (cleanTitle.length < 3) cleanTitle = candidate.song.title.toLowerCase();
+                let cleanArtist = (candidate.song.artist ?? "").replace(/\s*[\(\[-].*$/g, "").trim().toLowerCase();
+                if (cleanArtist.length < 3) cleanArtist = (candidate.song.artist ?? "").toLowerCase();
+
+                if (
+                  (cleanTitle.length >= 3 && otherText.includes(cleanTitle)) ||
+                  (cleanArtist.length >= 3 && otherText.includes(cleanArtist))
+                ) {
+                  matchedSong = candidate.song;
+                  break;
+                }
+              }
+            }
+            if (matchedSong) break;
+          }
+
+          // If still no matches anywhere, fall back to the winning song or first song in history
+          if (!matchedSong) {
+            if (context.song) {
+              matchedSong = context.song;
+            } else if (context.gameHistory && context.gameHistory.length > 0) {
+              matchedSong = context.gameHistory[0]!.song;
+            }
+          }
+        }
+
+        if (matchedSong && matchedSong.songId) {
+          extra = {
+            songId: matchedSong.songId,
+            snippetStartS: matchedSong.snippetStartS ?? 30,
+            snippetLenS: matchedSong.snippetLenS ?? undefined,
+          };
+        }
       }
 
       voiced.push({
@@ -203,8 +285,9 @@ export class ShowcaseService {
       tagline: theme.tagline,
       bgVideoUrl: `/showcase/backgrounds/${theme.id}.mp4`,
       bgImageUrl: `/showcase/backgrounds/${theme.id}.jpg`,
-      bgMusicUrl: `/showcase/music/${theme.music}`,
+      bgMusicUrl: context.reason === "finale" ? null : `/showcase/music/${theme.music}`,
       cues: voiced,
+      reason: context.reason,
     };
   }
 }
@@ -217,6 +300,23 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
     const pool = matches.length > 0 ? matches : characters.filter((c) => c.name !== exclude);
     return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)]!.name : null;
   };
+
+  if (theme.id === "movie-review") {
+    const statlerChar = characters.find((c) => c.name.toLowerCase().includes("statler"));
+    const waldorfChar = characters.find((c) => c.name.toLowerCase().includes("waldorf"));
+
+    let host = statlerChar ? statlerChar.name : null;
+    let cohost = waldorfChar ? waldorfChar.name : null;
+
+    if (host === null) {
+      host = pick(theme.preferredPersonas.host, cohost);
+    }
+    if (cohost === null && theme.roles.cohost !== null) {
+      cohost = pick(theme.preferredPersonas.cohost, host);
+    }
+    return { host, cohost };
+  }
+
   const host = pick(theme.preferredPersonas.host, null);
   const cohost = theme.roles.cohost !== null ? pick(theme.preferredPersonas.cohost, host) : null;
   return { host, cohost };
@@ -225,44 +325,66 @@ function pickCast(theme: ThemeConfig, characters: VoiceCharacter[]): { host: str
 function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host: string | null; cohost: string | null }): string {
   const song = context.song;
 
+  let movieReviewStyleInstructions = "";
+  if (theme.id === "movie-review") {
+    movieReviewStyleInstructions =
+      `For this movie-review theme, the speakers are Statler and Waldorf, the iconic grumpy old critics from The Muppet Show. ` +
+      `Keep them strictly in character as two old, grumpy, but extremely funny hecklers. ` +
+      `They should be relentless and unforgiving in their heckling, throwing sarcastic, embarrassing, and sharp jabs at the contestants, the songs, their music knowledge, and each other. ` +
+      `The primary goal of their criticism is to completely embarrass and humiliate the players for their terrible guesses or performance. ` +
+      `Host represents Statler (grumpy, sharp-tongued critic A) and cohost represents Waldorf (giggling, sarcastic, mocking critic B). Both firing jabs at every turn, and cackling loudly at their own jokes.  ` +
+      `Write their banter with their signature cynical comedy style and classic back-and-forth heckling, laughing at the players' incompetence.`;
+  }
+
+  let infomercialStyleInstructions = "";
+  if (theme.id === "infomercial") {
+    infomercialStyleInstructions =
+      `For this 90s Infomercial theme, the segment must be a hilarious, cheesy, tongue-in-cheek, relentless late-night TV infomercial sales pitch. ` +
+      `The host is a fast-talking, overly enthusiastic Pitchman and the cohost is an excited, gullible Sidekick. ` +
+      `They are selling a cheesy compilation CD or cassette (like 'Monster Hits 90s' or 'Now That's What I Call Songster!') featuring the songs from this game. ` +
+      `Use classic 90s infomercial tropes: 'But wait, there's more!', 'Not sold in stores!', 'Call in the next 10 minutes!', 'Operators are standing by!', and price pitches (e.g., 'Only 4 easy payments of $19.99!'). ` +
+      `Keep the energy incredibly high, ridiculous, and commercialized, referencing the song(s) or artist(s) as featured tracks on the compilation.`;
+  }
+
   if (context.reason === "finale") {
     const historyLines = context.gameHistory
       ? context.gameHistory
-          .map((h) => {
-            const scoresStr = h.teamScores
-              ? h.teamScores.map((ts) => `${ts.teamName}: ${ts.score}`).join(", ")
-              : `Placing team score: ${h.scoreAfter}`;
-            return `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${
-              h.song.title ?? "Unknown Track"
-            }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${
-              h.steal
-                ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
-                : ""
+        .map((h) => {
+          const scoresStr = h.teamScores
+            ? h.teamScores.map((ts) => `${ts.teamName}: ${ts.score}`).join(", ")
+            : `Placing team score: ${h.scoreAfter}`;
+          return `- Turn ${h.turnId + 1}: ${h.placerName} of team ${h.teamName} placed "${h.song.title ?? "Unknown Track"
+            }" by ${h.song.artist ?? "Unknown Artist"} (${h.song.year}) -> ${h.correct ? "CORRECT" : "WRONG"}${h.steal
+              ? `, stolen by ${h.steal.stealerName} (${h.steal.correct ? "SUCCESSFUL steal" : "FAILED steal"})`
+              : ""
             }. Scores after turn: ${scoresStr}`;
-          })
-          .join("\n")
+        })
+        .join("\n")
       : "";
 
     const playerMentions = context.playerMentions ? `All players in this game: ${context.playerMentions.join(", ")}.` : "";
 
     return [
       `Write a grand finale segment in the style of ${theme.promptStyle} celebrating the end of the Songster game!`,
+      movieReviewStyleInstructions,
+      infomercialStyleInstructions,
       `The game has just ended! Headline: ${context.headline}`,
       song !== null
         ? `The final winning song: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.`
         : "",
       playerMentions,
       `Here is the recap of how the game went down:\n${historyLines}`,
-      `Your task is to write a longer, dramatic, and highly entertaining review of the key moments in this game.`,
-      `Incorporate specific mentions of players, highlight key turn outcomes (e.g. replays of specific correct answers or epic steals), and make it feel like a grand finale presentation with high energy.`,
-      `Since this is a grand finale, write 4-6 cues total (instead of the usual 2-3). Switch speakers back and forth.`,
-      `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions.`,
+      `Your task is to write a longer, highly detailed, and extremely entertaining review of the key moments in this game.`,
+      `Incorporate specific mentions of players, highlight key turn outcomes (e.g. correct answers or epic steals).`,
+      `To make the wrap up highly engaging, explicitly reference specific song titles or artists from the recap in the dialogue. When a speaker brings up a song, they should say its title or artist clearly.`,
+      `Write a longer, detailed showcase segment with exactly 5-7 cues total (strictly no more than 8 cues). Switch speakers back and forth.`,
+      `The final cue must be a short, dedicated outro/sign-off segment (e.g., a goodbye or wrap-up statement from the hosts).`,
+      `Each cue must be ONE short sentence under 25 words. No markdown, no stage directions. Do NOT generate more than 8 cues in total.`,
       `When writing the spoken lines, insert the token '[emphasis]' (exactly as written, including the square brackets) directly before any word you want to emphasize or speak with high energy (e.g., 'This is the [emphasis]grand [emphasis]finale!'). Do NOT use closing tags like '[/emphasis]'.`,
       'Return STRICT JSON ONLY: {"cues":[{"speaker":"host","text":"..."},{"speaker":"cohost","text":"..."}]}',
-      `Speakers: "host" (${cast.host ?? theme.roles.host})${
-        theme.roles.cohost !== null
-          ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})`
-          : ' only — use "host" for every cue'
+      `Speakers: "host" (${cast.host ?? theme.roles.host})${theme.roles.cohost !== null
+        ? ` and "cohost" (${cast.cohost ?? theme.roles.cohost})`
+        : ' only — use "host" for every cue'
       }.`,
     ]
       .filter((line) => line.length > 0)
@@ -271,6 +393,8 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
 
   return [
     `Write a short, funny segment in the style of ${theme.promptStyle}.`,
+    movieReviewStyleInstructions,
+    infomercialStyleInstructions,
     `React to this moment in a music-timeline party game: ${context.headline}`,
     `The placing team guessed ${context.outcome === "correct" ? "CORRECTLY" : "WRONG"} — open the first cue by reacting to that.`,
     song !== null ? `The song in question: "${song.title ?? "a track"}" by ${song.artist ?? "someone"}, from ${song.year}.` : "",
@@ -304,6 +428,28 @@ function parseScript(raw: string): Cue[] {
 }
 
 function templateCues(theme: ThemeConfig, context: ShowcaseContext): Cue[] {
+  if (context.reason === "finale" && context.gameHistory && context.gameHistory.length > 0) {
+    const cues: Cue[] = [
+      { speaker: "host", text: `We have a winner! ${context.headline}` }
+    ];
+    // Limit to up to 5 tracks from the game history
+    const history = context.gameHistory.slice(0, 5);
+    for (let i = 0; i < history.length; i++) {
+      const h = history[i]!;
+      const speaker = i % 2 === 0 && theme.roles.cohost !== null ? "cohost" : "host";
+      const action = h.correct ? "correctly placed" : "attempted to place";
+      cues.push({
+        speaker,
+        text: `Remember when ${h.placerName} of ${h.teamName} ${action} the song ${h.song.title ?? "track"} from ${h.song.year}?`
+      });
+    }
+    cues.push({
+      speaker: "host",
+      text: "What a fantastic show! That's all from the music center. Thank you for playing Songster, and goodnight!"
+    });
+    return cues;
+  }
+
   const cues: Cue[] = [{ speaker: "host", text: context.headline }];
   if (context.song !== null) {
     cues.push({

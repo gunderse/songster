@@ -6,8 +6,9 @@ import { logger } from "./logger.js";
 import { ollamaService } from "./ai/ollama-service.js";
 import { voiceGeneratorService } from "./ai/voice-generator-service.js";
 import { emceeService } from "./ai/emcee-service.js";
-import { showcaseService } from "./ai/showcase-service.js";
+import { showcaseService, THEMES, type ThemeConfig } from "./ai/showcase-service.js";
 import type { RoomManager } from "./room-service.js";
+import { openDatabase } from "./db.js";
 
 const BENCHMARK_SAMPLE_SONG = {
   title: "Don't Stop Believin'",
@@ -31,6 +32,24 @@ export function createAdminRouter(manager: RoomManager): Router {
       createdAt: room.createdAt || Date.now(),
     }));
     res.json({ rooms });
+  });
+
+  /**
+   * GET /api/admin/voices
+   * Lists all available narrator/character voices.
+   */
+  router.get("/voices", async (_req, res) => {
+    try {
+      const characters = await voiceGeneratorService.listCharacters();
+      const voices = characters.map((c) => ({
+        name: c.name,
+        tags: c.tags,
+      }));
+      res.json({ ok: true, voices });
+    } catch (err) {
+      logger.warn({ error: getErrorMessage(err) }, "failed to list voice characters");
+      res.json({ ok: true, voices: [] });
+    }
   });
 
   /**
@@ -190,16 +209,43 @@ export function createAdminRouter(manager: RoomManager): Router {
    * Body: { model?: string; think?: boolean }
    */
   router.post("/showcase-smoketest", async (req, res) => {
-    const model = (req.body as { model?: string }).model ?? ollamaModel;
-    const think = (req.body as { think?: boolean }).think !== false;
+    const { model, think, themeId } = req.body as { model?: string; think?: boolean; themeId?: string };
+    const selectedModel = model ?? ollamaModel;
+    const selectedThink = think !== false;
     const t0 = Date.now();
+
+    let realSongs: Array<{ songId: string; title: string | null; artist: string | null; year: number; snippetStartS: number; snippetLenS: number | null }> = [];
+    try {
+      const db = openDatabase();
+      const rows = db.prepare("SELECT id, title, artist, year, snippet_start_s, snippet_len_s FROM songs LIMIT 4").all() as any[];
+      realSongs = rows.map((r) => ({
+        songId: r.id,
+        title: r.title,
+        artist: r.artist,
+        year: r.year,
+        snippetStartS: r.snippet_start_s || 30,
+        snippetLenS: r.snippet_len_s || null,
+      }));
+    } catch (err) {
+      logger.warn({ error: getErrorMessage(err) }, "could not load real songs for showcase smoketest");
+    }
+
+    const defaultFictional = [
+      { title: "Billie Jean", artist: "Michael Jackson", year: 1982, songId: "billie-jean-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Smells Like Teen Spirit", artist: "Nirvana", year: 1991, songId: "teen-spirit-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Hey Jude", artist: "Beatles", year: 1968, songId: "hey-jude-id", snippetStartS: 30, snippetLenS: null },
+      { title: "Stayin' Alive", artist: "Bee Gees", year: 1977, songId: "stayin-alive-id", snippetStartS: 30, snippetLenS: null },
+    ];
+
+    const testSongs = realSongs.length >= 4 ? realSongs : defaultFictional;
+    const finalSong = testSongs[3]!;
 
     const fictionalHistory = [
       {
         turnId: 0,
         teamName: "Red Devils",
         placerName: "Alex",
-        song: { title: "Billie Jean", artist: "Michael Jackson", year: 1982 },
+        song: { songId: testSongs[0]!.songId, title: testSongs[0]!.title, artist: testSongs[0]!.artist, year: testSongs[0]!.year },
         correct: true,
         steal: null,
         scoreAfter: 1,
@@ -212,9 +258,9 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 1,
         teamName: "Blue Angels",
         placerName: "Taylor",
-        song: { title: "Smells Like Teen Spirit", artist: "Nirvana", year: 1991 },
+        song: { songId: testSongs[1]!.songId, title: testSongs[1]!.title, artist: testSongs[1]!.artist, year: testSongs[1]!.year },
         correct: false,
-        steal: { stealerName: "Jordan", correct: true },
+        steal: { stealerName: "Jake", correct: true },
         scoreAfter: 2,
         teamScores: [
           { teamName: "Red Devils", score: 2 },
@@ -224,8 +270,8 @@ export function createAdminRouter(manager: RoomManager): Router {
       {
         turnId: 2,
         teamName: "Red Devils",
-        placerName: "Jordan",
-        song: { title: "Hey Jude", artist: "The Beatles", year: 1968 },
+        placerName: "Jake",
+        song: { songId: testSongs[2]!.songId, title: testSongs[2]!.title, artist: testSongs[2]!.artist, year: testSongs[2]!.year },
         correct: true,
         steal: null,
         scoreAfter: 3,
@@ -238,7 +284,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 3,
         teamName: "Blue Angels",
         placerName: "Morgan",
-        song: { title: "Stayin' Alive", artist: "Bee Gees", year: 1977 },
+        song: { songId: testSongs[3]!.songId, title: testSongs[3]!.title, artist: testSongs[3]!.artist, year: testSongs[3]!.year },
         correct: true,
         steal: null,
         scoreAfter: 1,
@@ -251,7 +297,7 @@ export function createAdminRouter(manager: RoomManager): Router {
         turnId: 4,
         teamName: "Red Devils",
         placerName: "Alex",
-        song: { title: "Bohemian Rhapsody", artist: "Queen", year: 1975 },
+        song: { songId: finalSong.songId, title: finalSong.title, artist: finalSong.artist, year: finalSong.year },
         correct: true,
         steal: null,
         scoreAfter: 4,
@@ -266,14 +312,19 @@ export function createAdminRouter(manager: RoomManager): Router {
       const showcase = await showcaseService.build(
         {
           reason: "finale",
-          song: { title: "Bohemian Rhapsody", artist: "Queen", year: 1975 },
+          song: { title: finalSong.title, artist: finalSong.artist, year: finalSong.year },
           situation: "Red Devils won the match with a final score of 4 points to 1 point.",
           headline: "Red Devils win Songster!",
           outcome: "correct",
           gameHistory: fictionalHistory,
-          playerMentions: ["Alex", "Taylor", "Jordan", "Morgan"],
+          playerMentions: ["Alex", "Taylor", "Jake", "Morgan"],
+          winningTimeline: testSongs.map((ts) => ({
+            songId: ts.songId,
+            snippetStartS: ts.snippetStartS,
+            snippetLenS: ts.snippetLenS,
+          })),
         },
-        { model, think }
+        { model: selectedModel, think: selectedThink, themeId }
       );
 
       if (showcase === null) {
@@ -284,6 +335,39 @@ export function createAdminRouter(manager: RoomManager): Router {
       res.json({ ok: true, showcase, latencyMs: Date.now() - t0 });
     } catch (err) {
       logger.error({ error: getErrorMessage(err) }, "admin showcase smoketest failed");
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.get("/showcase-themes", (req, res) => {
+    try {
+      const themes = THEMES.map((t: ThemeConfig) => ({ id: t.id, label: t.label, tagline: t.tagline }));
+      res.json({ ok: true, themes });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.get("/song-plays", (req, res) => {
+    try {
+      const db = openDatabase();
+      const rows = db.prepare(`
+        SELECT song_id as songId, title, artist, play_count as playCount, last_played_at as lastPlayedAt 
+        FROM song_plays 
+        ORDER BY play_count DESC, last_played_at DESC
+      `).all();
+      res.json({ ok: true, stats: rows });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: getErrorMessage(err) });
+    }
+  });
+
+  router.post("/song-plays/reset", (req, res) => {
+    try {
+      const db = openDatabase();
+      db.prepare("DELETE FROM song_plays").run();
+      res.json({ ok: true });
+    } catch (err) {
       res.status(500).json({ ok: false, error: getErrorMessage(err) });
     }
   });
