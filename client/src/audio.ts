@@ -272,11 +272,12 @@ export function stopCues(): void {
   stopDistraction();
 }
 
-export function playDistraction(url: string): void {
+export function playDistraction(url: string, onEnded?: () => void): void {
   if (!unlocked) return;
   try {
     distractionEl.src = url;
     distractionEl.volume = 1.0;
+    distractionEl.onended = onEnded ?? null;
     distractionEl.load();
     void distractionEl.play().catch(() => undefined);
   } catch {
@@ -285,9 +286,11 @@ export function playDistraction(url: string): void {
 }
 
 export function stopDistraction(): void {
+  const el = distractionEl;
+  el.onended = null;
   try {
-    distractionEl.pause();
-    distractionEl.src = SILENT_AUDIO;
+    el.pause();
+    el.src = SILENT_AUDIO;
   } catch {
     // ignore
   }

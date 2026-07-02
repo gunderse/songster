@@ -339,7 +339,7 @@ function buildPrompt(theme: ThemeConfig, context: ShowcaseContext, cast: { host:
   let infomercialStyleInstructions = "";
   if (theme.id === "infomercial") {
     infomercialStyleInstructions =
-      `For this 90s Infomercial theme, the segment must be a hilarious, cheesy, tongue-in-cheek, relentless late-night TV infomercial sales pitch. ` +
+      `For this 90s Infomercial theme, the segment must be a hilarious, cheesy, tongue-in-cheek, relentless late-night TV infomercial sales pitch.  Comments like 'If you like these songs you heard in the game, you'll love this compilation!' are encouraged.` +
       `The host is a fast-talking, overly enthusiastic Pitchman and the cohost is an excited, gullible Sidekick. ` +
       `They are selling a cheesy compilation CD or cassette (like 'Monster Hits 90s' or 'Now That's What I Call Songster!') featuring the songs from this game. ` +
       `Use classic 90s infomercial tropes: 'But wait, there's more!', 'Not sold in stores!', 'Call in the next 10 minutes!', 'Operators are standing by!', and price pitches (e.g., 'Only 4 easy payments of $19.99!'). ` +

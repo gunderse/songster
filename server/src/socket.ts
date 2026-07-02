@@ -166,6 +166,9 @@ export function registerSockets(io: AppServer, manager: RoomManager): void {
     socket.on("hub:skipSong", () => {
       manager.hubSkipSong(socket.id);
     });
+    socket.on("hub:distractionFinished", () => {
+      manager.hubDistractionFinished(socket.id);
+    });
 
     socket.on("disconnect", (reason) => {
       logger.info({ socketId: socket.id, reason }, "client disconnected");

@@ -1128,6 +1128,8 @@ function HubAudioSmokeTestPanel() {
 
   function playRandom() {
     if (songs.length === 0) return;
+    unlockAudio();
+    setUnlocked(true);
     const rand = songs[Math.floor(Math.random() * songs.length)]!;
     setPlayingSong(rand);
     const url = audioStreamUrl(rand.id);

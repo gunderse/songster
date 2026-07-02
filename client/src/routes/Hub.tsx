@@ -108,7 +108,9 @@ export function Hub({ code }: { code: string }) {
       }, view.reason === "finale");
     }
     function onDistraction(payload: { url: string }) {
-      playDistraction(payload.url);
+      playDistraction(payload.url, () => {
+        socket.emit("hub:distractionFinished");
+      });
     }
 
     function onDestroyed() {

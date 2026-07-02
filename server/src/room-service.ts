@@ -674,19 +674,7 @@ export class RoomManager {
     return room;
   }
 
-  useDistraction(socketId: string): Room | undefined {
-    const found = this.findPlayerBySocket(socketId);
-    if (found === undefined) return undefined;
-    const { room, player } = found;
-    const game = room.game;
-    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
-    if (player.teamId === null || player.teamId === game.active.teamId) return room;
-    const deployingTeam = room.teams.find((t) => t.id === player.teamId);
-    if (deployingTeam === undefined || deployingTeam.tokens <= 0 || game.active.distraction) return room;
-
-    deployingTeam.tokens -= 1;
-    game.active.distraction = { teamId: player.teamId, playerName: player.name };
-
+  private triggerDistractionSound(room: Room): void {
     void (async () => {
       try {
         const annoyDir = path.resolve(import.meta.dirname, "../../assets/effects/annoy");
@@ -702,8 +690,42 @@ export class RoomManager {
         this.hooks.playDistractionToHubs?.(room.code, { url: "/effects/annoy/airhorn.mp3" });
       }
     })();
+  }
 
+  useDistraction(socketId: string): Room | undefined {
+    const found = this.findPlayerBySocket(socketId);
+    if (found === undefined) return undefined;
+    const { room, player } = found;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
+    if (player.teamId === null || player.teamId === game.active.teamId) return room;
+    const deployingTeam = room.teams.find((t) => t.id === player.teamId);
+    if (deployingTeam === undefined) return room;
+
+    const isAlreadyDistracted = !!game.active.distraction;
+
+    if (!isAlreadyDistracted) {
+      if (deployingTeam.tokens <= 0) return room;
+      deployingTeam.tokens -= 1;
+      game.active.distraction = { teamId: player.teamId, playerName: player.name };
+    } else {
+      // If already distracted, only the team that deployed it can trigger another sound.
+      if (game.active.distraction && game.active.distraction.teamId !== player.teamId) return room;
+    }
+
+    this.triggerDistractionSound(room);
     this.hooks.broadcast(room.code);
+    return room;
+  }
+
+  hubDistractionFinished(socketId: string): Room | undefined {
+    const room = this.findRoomByHubSocket(socketId);
+    if (room === undefined) return undefined;
+    const game = room.game;
+    if (game === null || game.active === null || game.active.phase !== "placing" || game.paused) return room;
+    if (!game.active.distraction) return room;
+
+    this.triggerDistractionSound(room);
     return room;
   }
 

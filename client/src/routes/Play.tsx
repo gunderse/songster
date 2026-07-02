@@ -209,7 +209,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     const deadlineMs = active.placeDeadline !== null ? Math.max(0, active.placeDeadline - now) : null;
     const hasDistraction = !!active.distraction;
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+      <main className="relative mx-auto flex h-dvh max-h-dvh overflow-hidden max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl">
         {/* Glow ambient shapes */}
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
         
@@ -228,7 +228,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
         <SuggestionsList suggestions={suggestions} cards={myCards} accentColor={myTeam?.color ?? "#6366f1"} onUse={(i) => setSelectedSlot(i)} />
 
-        <div className="relative z-10 flex-1 flex flex-col justify-start">
+        <div className="relative z-10 flex-1 flex flex-col min-h-0 justify-start">
           <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={selectedSlot} onSelect={setSelectedSlot} suggestionIndices={suggestions.map((s) => s.index)} eliminatedSlots={active.eliminatedSlots} />
         </div>
 
@@ -291,8 +291,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
     me.teamId !== active.teamId &&
     room.config.specialsPerTeam > 0 &&
     myTeam !== null &&
-    myTeam.tokens > 0 &&
-    !active.distraction;
+    ((!active.distraction && myTeam.tokens > 0) || (active.distraction && active.distraction.teamId === me.teamId));
 
   const canSuggest =
     active !== null &&
@@ -306,14 +305,14 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── suggest mode: send a non-binding hint to your placer ──────────────
   if (suggestMode && active !== null) {
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+      <main className="relative mx-auto flex h-dvh max-h-dvh overflow-hidden max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl">
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-500/5 blur-[80px]" />
         <div className="text-center relative z-10">
           <div className="text-xs uppercase tracking-widest font-bold text-indigo-300">💡 Teammate suggestion</div>
           <h1 className="text-2xl font-black font-heading mt-1">Help out {placerName}</h1>
           <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Suggest where the song belongs on your timeline. They will make the final decision.</p>
         </div>
-        <div className="relative z-10 flex-1 flex flex-col justify-start">
+        <div className="relative z-10 flex-1 flex flex-col min-h-0 justify-start">
           <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={suggestSlot} onSelect={setSuggestSlot} />
         </div>
         <div className="mt-auto flex flex-col gap-2 relative z-10">
@@ -340,7 +339,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
   // ── steal mode: place your challenge on your own timeline ─────────────
   if (stealMode && active !== null) {
     return (
-      <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 overflow-x-hidden">
+      <main className="relative mx-auto flex h-dvh max-h-dvh overflow-hidden max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950">
         <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-amber-500/5 blur-[80px]" />
         <div className="text-center relative z-10">
           <div className="text-xs uppercase tracking-widest font-bold text-amber-400">🥷 Steal play</div>
@@ -349,7 +348,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
             Place it on your own timeline. If {placerName} guessed wrong and you guess right, your team steals the card!
           </p>
         </div>
-        <div className="relative z-10 flex-1 flex flex-col justify-start">
+        <div className="relative z-10 flex-1 flex flex-col min-h-0 justify-start">
           <TimelinePicker cards={myCards} teamColor={myTeam?.color ?? "#6366f1"} selected={stealSlot} onSelect={setStealSlot} accent="amber" />
         </div>
         <div className="mt-auto flex flex-col gap-2 relative z-10">
@@ -382,34 +381,38 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
 
   // ── waiting (someone else is placing) ─────────────────────────────────
   return (
-    <main className="relative mx-auto flex min-h-dvh max-w-md flex-col gap-4 px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl overflow-x-hidden">
+    <main className="relative mx-auto flex h-dvh max-h-dvh overflow-hidden max-w-md flex-col justify-between px-3.5 py-5 sm:p-5 text-slate-100 bg-slate-950 landscape:max-w-3xl">
       <div className="absolute top-[-10%] left-[-10%] h-[40%] w-[40%] rounded-full bg-slate-800/10 blur-[80px]" />
       
-      <div className="text-center relative z-10">
-        <div className="text-xs uppercase tracking-widest font-bold text-slate-500">Room {room.code}</div>
-        {active !== null ? (
-          <h1 className="text-lg font-extrabold font-heading mt-1 leading-snug">
-            <span style={{ color: activeTeam?.color }}>{activeTeam?.name}</span> is placing
-            <div className="text-xs font-semibold text-slate-400 mt-1 font-sans">{placerName} is picking · listen on the hub 🔊</div>
-          </h1>
-        ) : (
-          <h1 className="text-lg font-bold font-heading mt-1">Get ready…</h1>
+      {/* Top Header + Alerts (Fixed) */}
+      <div className="flex flex-col gap-3 shrink-0">
+        <div className="text-center relative z-10">
+          <div className="text-xs uppercase tracking-widest font-bold text-slate-500">Room {room.code}</div>
+          {active !== null ? (
+            <h1 className="text-lg font-extrabold font-heading mt-1 leading-snug">
+              <span style={{ color: activeTeam?.color }}>{activeTeam?.name}</span> is placing
+              <div className="text-xs font-semibold text-slate-400 mt-1 font-sans">{placerName} is picking · listen on the hub 🔊</div>
+            </h1>
+          ) : (
+            <h1 className="text-lg font-bold font-heading mt-1">Get ready…</h1>
+          )}
+        </div>
+
+        {active !== null && active.distraction && (
+          <p className="text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-xl py-2.5 px-4 relative z-10 animate-pulse">
+            📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
+          </p>
+        )}
+
+        {active !== null && me.teamId !== active.teamId && active.steal !== null && (
+          <p className="text-center text-xs font-bold uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 rounded-xl py-2 px-4 relative z-10">
+            🥷 {active.steal.playerName} is challenging with a STEAL!
+          </p>
         )}
       </div>
-
-      {active !== null && active.distraction && (
-        <p className="text-center text-xs font-bold uppercase tracking-wider text-red-200 bg-red-950/40 border border-red-900/30 rounded-xl py-2.5 px-4 relative z-10 animate-pulse">
-          📢 {active.distraction.playerName} ({room.teams.find((t) => t.id === active.distraction?.teamId)?.name}) ANNOYED the guessers!
-        </p>
-      )}
-
-      {active !== null && me.teamId !== active.teamId && active.steal !== null && (
-        <p className="text-center text-xs font-bold uppercase tracking-wider text-amber-400 bg-amber-950/20 border border-amber-900/30 rounded-xl py-2 px-4 relative z-10">
-          🥷 {active.steal.playerName} is challenging with a STEAL!
-        </p>
-      )}
       
-      <div className="flex flex-col gap-2 relative z-10 w-full max-w-sm mx-auto">
+      {/* Power-ups & Buttons (Fixed) */}
+      <div className="flex flex-col gap-2 shrink-0 relative z-10 w-full max-w-sm mx-auto">
         {room.config.specialsPerTeam > 0 && (canSteal || canDistract) && (
           <div className="flex gap-2">
             {canSteal && (
@@ -427,7 +430,7 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
                 onClick={() => socket.emit("player:useDistraction")}
                 className="flex-1 rounded-xl bg-gradient-to-r from-rose-500 to-red-650 px-4 py-3.5 text-xs font-black text-white hover:scale-[1.02] active:scale-[0.98] transition shadow-lg shadow-rose-950/20"
               >
-                📢 Annoy ({myTeam?.tokens ?? 0} left)
+                {active?.distraction ? "📢 Annoy again" : `📢 Annoy (${myTeam?.tokens ?? 0} left)`}
               </button>
             )}
           </div>
@@ -447,19 +450,22 @@ export function Play({ room, playerId }: { room: RoomState; playerId: string }) 
       </div>
 
       {active !== null && active.phase === "placing" && (
-        <div className="mx-auto flex w-full max-w-sm gap-2 relative z-10 mt-2">
-          <ReplayButton ready={now >= active.snippetPlayingUntil} />
-          <PlayMoreButton ready={now >= active.snippetPlayingUntil} />
+        <div className="mx-auto flex w-full max-w-sm gap-2 shrink-0 relative z-10">
+          <ReplayButton ready={now >= active.snippetPlayingUntil && !(active.distraction && me.teamId === active.teamId)} disabled={!!(active.distraction && me.teamId === active.teamId)} />
+          <PlayMoreButton ready={now >= active.snippetPlayingUntil && !(active.distraction && me.teamId === active.teamId)} disabled={!!(active.distraction && me.teamId === active.teamId)} />
         </div>
       )}
 
-      <div className="relative z-10 mt-2">
-        <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Your timeline {myTeam !== null ? `· ${myTeam.name}` : ""}</div>
-        <MiniTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} />
-      </div>
+      {/* Scrollable Passive Area (Timelines & Scoreboard) */}
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+        <div className="relative z-10">
+          <div className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Your timeline {myTeam !== null ? `· ${myTeam.name}` : ""}</div>
+          <MiniTimeline cards={myCards} teamColor={myTeam?.color ?? "#64748b"} />
+        </div>
 
-      <div className="relative z-10 mt-auto">
-        <Scoreboard room={room} />
+        <div className="relative z-10">
+          <Scoreboard room={room} />
+        </div>
       </div>
     </main>
   );
