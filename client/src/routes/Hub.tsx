@@ -177,6 +177,24 @@ export function Hub({ code }: { code: string }) {
     }
   }, [room?.game?.paused]);
 
+  // Background music for Lobby / Winner Circle
+  useEffect(() => {
+    if (!audioReady) {
+      return;
+    }
+    const inLobbyVal = room === null || room.status === "lobby";
+    const countdownEndsAtVal = room?.game?.countdownEndsAt ?? null;
+    const showWinner = room?.game !== null && room?.game !== undefined && room.game.winnerTeamId !== null;
+    const playLobbyMusic = (inLobbyVal || showWinner) && countdownEndsAtVal === null && showcase === null;
+
+    if (playLobbyMusic) {
+      startBgMusic("/bgmusic/Songster.wav", 0.08);
+    } else {
+      // Transitioning to gameplay, showcase, or countdown
+      stopBgMusic();
+    }
+  }, [room?.status, room?.game?.winnerTeamId, room?.game?.countdownEndsAt, showcase, audioReady]);
+
   // Reveal / win SFX (fire once per event).
   const lastResultRef = useRef<string | null>(null);
   const wonRef = useRef(false);
@@ -252,11 +270,14 @@ export function Hub({ code }: { code: string }) {
   const canStart = inLobby && playerCount >= 1 && hasEnoughSongs;
 
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-slate-950 p-6 text-slate-100 sm:p-10">
+    <main className="relative min-h-dvh overflow-hidden bg-base p-6 text-text-main sm:p-10 font-sans select-none">
+      {/* Top Bulb Strip */}
+      <div className="absolute top-0 left-0 w-full h-[10px] bg-[radial-gradient(circle,#ffd23f_0_3px,transparent)] [background-size:26px_10px] opacity-80 z-20" />
+
       {/* Back to Admin Button */}
       <a
         href="/admin"
-        className="fixed top-6 left-6 z-40 flex items-center justify-center w-10 h-10 rounded-full border border-white/10 bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition shadow-lg backdrop-blur-md cursor-pointer hover:scale-105 active:scale-95"
+        className="fixed top-6 left-6 z-40 flex items-center justify-center w-10 h-10 rounded-full border border-line bg-surface hover:bg-surface-2 text-text-dim hover:text-text-main transition shadow-lg backdrop-blur-md cursor-pointer hover:scale-105 active:scale-95"
         title="Back to Admin"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
@@ -265,8 +286,8 @@ export function Hub({ code }: { code: string }) {
       </a>
 
       {/* Glowing glassmorphic ambient backdrops */}
-      <div className="absolute top-[-20%] left-[-20%] h-[70%] w-[70%] rounded-full bg-indigo-500/5 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-20%] right-[-20%] h-[70%] w-[70%] rounded-full bg-purple-600/5 blur-[120px] pointer-events-none" />
+      <div className="absolute top-[-20%] left-[-20%] h-[70%] w-[70%] rounded-full bg-accent-magenta/5 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-20%] h-[70%] w-[70%] rounded-full bg-gold-yellow/5 blur-[120px] pointer-events-none" />
 
       {/* Small, non-obscuring audio-unlock banner */}
       {!audioReady && (
@@ -281,7 +302,7 @@ export function Hub({ code }: { code: string }) {
               setAudioFor(pending.lenS * 1000);
             }
           }}
-          className="fixed bottom-6 right-6 z-40 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 px-6 py-3.5 text-sm font-bold text-white shadow-[0_0_30px_rgba(99,102,241,0.4)] hover:scale-105 active:scale-95 transition"
+          className="fixed bottom-6 right-6 z-40 rounded-full bg-accent-magenta hover:bg-magenta-soft px-6 py-3.5 text-sm font-bold text-[#1a1110] shadow-[0_12px_30px_rgba(255,45,120,0.4)] hover:scale-105 active:scale-95 transition"
         >
           🔊 Tap to enable audio
         </button>
@@ -294,57 +315,57 @@ export function Hub({ code }: { code: string }) {
 
       {/* Paused Overlay */}
       {room?.game?.paused && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 md:gap-8 max-w-3xl w-full bg-slate-900/90 border border-white/10 p-6 md:p-8 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] items-center">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-deep/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 md:gap-8 max-w-3xl w-full bg-surface border border-line p-6 md:p-8 rounded-3xl shadow-[0_30px_80px_rgba(0,0,0,0.45)] items-center">
             {/* Left Column: Pause Controls */}
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="relative flex items-center justify-center w-20 h-20 bg-indigo-600 rounded-full text-white text-3xl font-bold shadow-[0_0_40px_rgba(99,102,241,0.4)]">
+              <div className="relative flex items-center justify-center w-20 h-20 bg-accent-magenta rounded-full text-[#1a1110] text-3xl font-bold shadow-[0_12px_30px_rgba(255,45,120,0.4)]">
                 <span className="animate-pulse">⏸</span>
               </div>
-              <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-slate-100 to-slate-300 font-heading">
+              <h2 className="text-3xl font-display font-black uppercase text-text-main tracking-wide">
                 Show Paused
               </h2>
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-text-dim">
                 The game is temporarily paused.
               </p>
               <button
                 type="button"
                 onClick={togglePause}
-                className="mt-2 w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm px-6 py-3 transition active:scale-95 cursor-pointer shadow-lg shadow-indigo-600/20"
+                className="mt-2 w-full rounded-xl bg-accent-magenta hover:bg-magenta-soft text-[#1a1110] font-display font-black text-sm px-6 py-3 transition active:scale-95 cursor-pointer shadow-lg"
               >
                 Resume Game
               </button>
-              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold animate-pulse">
+              <div className="text-[10px] font-mono text-text-faint uppercase tracking-widest font-bold animate-pulse">
                 Or Press Spacebar
               </div>
             </div>
 
             {/* Vertical Divider for larger screens */}
-            <div className="hidden md:block self-stretch w-px bg-white/10" />
-            <div className="h-px w-full bg-white/10 md:hidden" />
+            <div className="hidden md:block self-stretch w-px bg-line" />
+            <div className="h-px w-full bg-line md:hidden" />
 
             {/* Right Column: Connection info for new players */}
             <div className="flex flex-col items-center text-center gap-4">
-              <div className="text-xs font-bold uppercase tracking-[0.25em] text-slate-455">Want to join?</div>
+              <div className="text-xs font-mono font-bold uppercase tracking-[0.25em] text-text-faint">Want to join?</div>
               <div
-                className="leading-none tracking-[0.15em] text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 font-black font-heading text-4xl md:text-5xl"
-                style={{ textShadow: "0 0 30px rgba(99,102,241,0.25)" }}
+                className="leading-none tracking-[0.15em] text-accent-magenta font-display font-black text-4xl md:text-5xl"
+                style={{ textShadow: "0 0 30px rgba(255,45,120,0.25)" }}
               >
                 {code}
               </div>
               
               {qr !== null ? (
-                <div className="rounded-2xl bg-slate-950/80 border border-white/10 p-3 shadow-md max-w-[160px]">
-                  <img src={qr} alt={`Join ${code}`} className="h-auto w-full rounded-xl" />
+                <div className="h-44 w-44 bg-white p-3 rounded-2xl flex items-center justify-center shadow-lg hover:scale-105 transition-transform duration-200 shrink-0">
+                  <img src={qr} alt={`Join ${code}`} className="h-full w-full rounded-lg" />
                 </div>
               ) : (
-                <div className="h-36 w-36 bg-slate-950/40 rounded-xl flex items-center justify-center text-slate-500 text-xs border border-white/5">
+                <div className="h-44 w-44 bg-surface rounded-2xl flex items-center justify-center text-text-faint text-xs border border-line">
                   Generating QR…
                 </div>
               )}
               
-              <p className="text-[11px] text-slate-400 leading-relaxed max-w-[245px]">
-                Scan QR or visit <span className="font-semibold text-slate-200 border-b border-indigo-500/30">{window.location.host}</span> and enter code <span className="font-bold text-indigo-300">{code}</span>
+              <p className="text-[11px] font-mono text-text-dim leading-relaxed max-w-[245px] uppercase tracking-wider">
+                Scan QR or visit <span className="font-semibold text-text-main border-b border-accent-magenta/30">{window.location.host}</span> and enter code <span className="font-bold text-accent-magenta">{code}</span>
               </p>
             </div>
           </div>
@@ -364,8 +385,8 @@ export function Hub({ code }: { code: string }) {
           />
         ) : (
           <>
-            <div className="mb-6 flex items-center justify-between text-slate-500 border-b border-slate-900 pb-4">
-              <span className="text-xs font-bold uppercase tracking-[0.4em] bg-clip-text bg-gradient-to-r from-slate-400 to-slate-600">Songster · The Theater</span>
+            <div className="mb-6 flex items-center justify-between text-text-dim border-b border-line pb-4 pt-2">
+              <span className="text-xs font-mono font-bold uppercase tracking-[0.4em] text-text-faint">Songster · The Theater</span>
               <span className="flex items-center gap-3">
                 <Waveform active={audioActive && !room?.game?.paused} />
                 {room?.game && (
@@ -375,7 +396,7 @@ export function Hub({ code }: { code: string }) {
                     className={`rounded-xl border px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md ${
                       room.game.paused
                         ? "bg-emerald-600 border-emerald-500 text-white shadow-emerald-600/10 hover:bg-emerald-500"
-                        : "bg-slate-900 border-slate-800 text-slate-400 shadow-slate-950/20 hover:bg-slate-800 hover:text-slate-200"
+                        : "bg-surface border-line text-text-dim shadow-slate-950/20 hover:bg-surface-2 hover:text-text-main"
                     }`}
                     title="Press Spacebar to toggle"
                   >
@@ -386,13 +407,13 @@ export function Hub({ code }: { code: string }) {
                   <button
                     type="button"
                     onClick={skipSong}
-                    className="rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-rose-400 hover:border-rose-900/50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
+                    className="rounded-xl border border-line bg-surface text-text-dim hover:bg-surface-2 hover:text-kick-red hover:border-kick-red/50 px-4 py-1.5 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
                     title="Skip the current song without deduction"
                   >
                     ⏭ Skip
                   </button>
                 )}
-                <span className="font-mono text-lg font-bold tracking-widest text-indigo-400 bg-indigo-950/40 border border-indigo-900/40 rounded-lg px-3 py-1 shadow-inner">{code}</span>
+                <span className="font-mono text-lg font-bold tracking-widest text-accent-magenta bg-surface-2 border border-line rounded-lg px-3 py-1 shadow-inner">{code}</span>
               </span>
             </div>
             <HubGame room={room} emcee={emcee} commentaryPending={commentaryPending} />
@@ -408,7 +429,6 @@ function LobbyView({
   qr,
   room,
   canStart,
-  playerCount,
   hasEnoughSongs,
   minSongsNeeded,
 }: {
@@ -420,58 +440,129 @@ function LobbyView({
   hasEnoughSongs: boolean;
   minSongsNeeded: number;
 }) {
+  if (room === null) return <p className="text-text-faint animate-pulse text-center py-6">Connecting to show server…</p>;
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid items-center gap-8 md:grid-cols-[1.3fr_1fr] bg-slate-900/40 border border-white/5 rounded-3xl p-8 backdrop-blur-md">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-slate-400">Join the show</div>
-          <div
-            className="mt-1 leading-none tracking-[0.1em] text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-violet-300 to-fuchsia-300 font-black font-heading"
-            style={{ fontSize: "min(16vw, 9.5rem)", textShadow: "0 0 40px rgba(99,102,241,0.1)" }}
-          >
-            {code}
-          </div>
-          <div className="mt-4 text-base text-slate-400 leading-relaxed">
-            Open the browser on your phone, navigate to <span className="font-semibold text-slate-200 border-b border-indigo-500/30 pb-0.5">{window.location.host}</span>, and enter the code <span className="font-black text-indigo-300 bg-indigo-950/50 rounded px-1.5 py-0.5">{code}</span>
-          </div>
+      {/* Lobby Header */}
+      <div className="flex flex-col md:flex-row items-center justify-between border-b border-line pb-4 pt-2 gap-4">
+        <div className="text-xs font-mono font-bold uppercase tracking-[0.28em] text-text-dim">● LOBBY</div>
+        <h1 className="font-display text-[66px] font-black leading-none uppercase tracking-[0.04em] text-text-main">
+          SONG<span className="text-accent-magenta">STER</span>
+        </h1>
+        <div className="flex items-center gap-2 rounded-full bg-surface border border-line px-4 py-1.5 shadow-sm">
+          <span className="h-2.5 w-2.5 rounded-full bg-accent-magenta animate-sc-pulse" />
+          <span className="text-[11px] font-mono font-bold uppercase tracking-[0.28em] text-accent-magenta">LIVE</span>
         </div>
-        {qr !== null && (
-          <div className="justify-self-center rounded-3xl bg-slate-950/80 border border-white/10 p-5 shadow-[0_20px_50px_rgba(0,0,0,0.5)] md:justify-self-end">
-            <img src={qr} alt={`Join ${code}`} className="h-auto w-full max-w-[280px] rounded-2xl" />
-            <div className="mt-3 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Scan to join</div>
-          </div>
-        )}
       </div>
 
-      <div className="mt-4">
-        {room === null ? (
-          <p className="text-slate-500 animate-pulse text-center py-6">Connecting to show server…</p>
-        ) : (
-          <>
-            <h2 className="mb-4 text-lg font-bold uppercase tracking-wider text-slate-400 border-b border-slate-900 pb-2">
-              {room.players.length === 0 ? "Waiting for players to join…" : `Roster (${room.players.length} active)`}
-            </h2>
-            <Roster room={room} size="big" />
+      {/* Main split lobby panels */}
+      <div className="grid items-stretch gap-6 md:grid-cols-[1.45fr_1fr]">
+        {/* Left: Join Info Panel */}
+        <div className="rounded-[18px] border border-line bg-surface p-8 grid sm:grid-cols-[1.1fr_0.9fr] items-center gap-8 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+          {/* Giant QR Code on the Left */}
+          {qr !== null ? (
+            <div className="flex flex-col items-center gap-3 w-full">
+              <div className="w-full aspect-square max-w-[340px] bg-white p-4 rounded-[22px] flex items-center justify-center shadow-2xl hover:scale-[1.02] transition-transform duration-200">
+                <img src={qr} alt={`Join ${code}`} className="h-full w-full rounded-xl" />
+              </div>
+              <div className="text-[10px] font-mono font-bold uppercase tracking-[0.15em] text-text-faint text-center">
+                Scan to join instantly
+              </div>
+            </div>
+          ) : (
+            <div className="w-full aspect-square max-w-[340px] bg-bg-deep rounded-[22px] border border-line flex items-center justify-center text-text-faint text-sm">
+              Generating QR…
+            </div>
+          )}
 
-            <div className="mt-12 flex flex-col items-center gap-3">
+          {/* Join Text & Room Code on the Right */}
+          <div className="flex flex-col gap-6 h-full justify-between py-2">
+            <div>
+              <div className="text-[11px] font-mono font-bold uppercase tracking-[0.28em] text-text-faint">JOIN AT</div>
+              <div className="font-display text-[32px] md:text-[36px] font-black text-gold-yellow tracking-wide mt-1 select-all break-all leading-tight">
+                {window.location.host}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-mono font-bold uppercase tracking-[0.28em] text-text-faint mb-2">ROOM CODE</div>
+              <div className="flex gap-2">
+                {code.split("").map((char, i) => (
+                  <div key={i} className="flex-1 h-[76px] rounded-[12px] border-2 border-line bg-bg-deep flex items-center justify-center font-display text-[42px] font-extrabold text-text-main">
+                    {char}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Roster Panel */}
+        <div className="rounded-[18px] border border-line bg-surface p-8 flex flex-col justify-between gap-4 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+          <div className="flex flex-col gap-4 flex-1">
+            <div className="flex items-center justify-between border-b border-line pb-2">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.28em] text-text-faint">IN THE ROOM</span>
+              <span className="text-xs font-mono font-bold uppercase text-accent-magenta">{room.players.length} Players</span>
+            </div>
+            <div className="flex-1 min-h-[220px]">
+              <Roster room={room} size="big" />
+            </div>
+          </div>
+
+          {/* Bot Management Panel */}
+          <div className="mt-4 pt-4 border-t border-line flex flex-col gap-3">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-text-faint">Manage Bots</div>
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => socket.emit("room:start", { code })}
-                disabled={!canStart}
-                className="rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-16 py-5 text-2xl font-black text-white shadow-[0_10px_35px_rgba(16,185,129,0.3)] hover:scale-[1.03] active:scale-[0.98] disabled:scale-100 disabled:shadow-none disabled:cursor-not-allowed disabled:from-slate-800 disabled:to-slate-800 disabled:opacity-40 transition-all font-heading"
+                onClick={() => socket.emit("admin:addBot", { code })}
+                className="rounded-xl bg-surface-2 hover:bg-line border border-line text-text-main font-mono font-bold text-xs uppercase px-4 py-2.5 transition cursor-pointer shadow-sm"
               >
-                ▶ Start the show
+                + Add Bot 🤖
               </button>
-              <p className="text-xs tracking-wider uppercase text-slate-500 text-center max-w-md">
-                {!hasEnoughSongs && room
-                  ? `⚠ Insufficient approved songs (${room.poolSize}/${minSongsNeeded} needed). Go to /library to approve songs.`
-                  : canStart
-                    ? `${playerCount} player${playerCount > 1 ? "s" : ""} in lobby · countdown starts on launch`
-                    : "Waiting for at least one player to join"}
-              </p>
+              {room.players.filter((p) => p.isBot).map((bot) => (
+                <button
+                  key={bot.id}
+                  type="button"
+                  onClick={() => socket.emit("admin:removeBot", { code, playerId: bot.id })}
+                  className="rounded-xl bg-surface-2 hover:bg-kick-red/20 hover:text-kick-red border border-line text-text-dim px-3 py-2.5 transition cursor-pointer shadow-sm text-xs font-semibold"
+                  title="Remove bot"
+                >
+                  {bot.name} ✕
+                </button>
+              ))}
             </div>
-          </>
-        )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Banner */}
+      <div className="mt-4 rounded-2xl bg-accent-magenta text-[#1a1110] p-6 flex flex-col md:flex-row items-center justify-between gap-4 shadow-[0_12px_40px_rgba(255,45,120,0.25)]">
+        <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
+          <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] border-2 border-[#1a1110] px-3 py-1 rounded-md">
+            UP NEXT
+          </div>
+          <div className="font-display text-[26px] font-black uppercase tracking-[0.05em]">
+            Trivia Timeline Rush · {room.teams.length} Teams · Target {room.config.targetLength} Cards
+          </div>
+        </div>
+        <div className="flex items-center gap-4 w-full md:w-auto justify-center md:justify-end">
+          {canStart ? (
+            <button
+              type="button"
+              onClick={() => socket.emit("room:start", { code })}
+              className="rounded-xl bg-[#1a1110] hover:bg-surface text-accent-magenta font-display font-black text-xl uppercase px-8 py-3.5 hover:scale-[1.03] active:scale-[0.98] transition cursor-pointer shadow-md"
+            >
+              Start the show ▸
+            </button>
+          ) : (
+            <div className="text-xs font-mono font-bold uppercase tracking-[0.1em] opacity-85 text-[#1a1110]">
+              {!hasEnoughSongs
+                ? `⚠ Need more approved songs (${room.poolSize}/${minSongsNeeded})`
+                : "Waiting for players to join..."}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -495,23 +586,23 @@ function Countdown({ endsAt, ready, emcee, code }: { endsAt: number; ready: bool
   if (remaining <= 0) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md px-6">
-      <div className="text-sm font-bold uppercase tracking-[0.45em] text-amber-400">Get ready</div>
+    <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center bg-bg-deep/90 backdrop-blur-md px-6">
+      <div className="text-[11px] font-mono font-bold uppercase tracking-[0.45em] text-gold-yellow">Get ready</div>
 
       {!ready ? (
         <>
           <div className="relative w-48 h-48 my-8 flex items-center justify-center">
-            <div className="absolute w-32 h-32 rounded-full border-4 border-slate-900" />
+            <div className="absolute w-32 h-32 rounded-full border-4 border-line" />
             <motion.div
-              className="absolute w-32 h-32 rounded-full border-4 border-transparent border-t-amber-400 border-r-amber-500"
+              className="absolute w-32 h-32 rounded-full border-4 border-transparent border-t-gold-yellow border-r-accent-magenta"
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}
             />
-            <div className="absolute text-xs font-bold uppercase tracking-widest text-amber-400/70 animate-pulse">
+            <div className="absolute text-xs font-mono font-bold uppercase tracking-widest text-gold-yellow/70 animate-pulse">
               Loading
             </div>
           </div>
-          <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">Preparing the show…</div>
+          <div className="mt-4 text-sm font-mono tracking-widest uppercase text-text-dim">Preparing the show…</div>
         </>
       ) : (
         <>
@@ -521,11 +612,11 @@ function Countdown({ endsAt, ready, emcee, code }: { endsAt: number; ready: bool
             animate={{ scale: 1, opacity: 1, rotate: 0 }}
             exit={{ scale: 1.4, opacity: 0, rotate: 10 }}
             transition={{ type: "spring", stiffness: 180, damping: 11 }}
-            className="mt-2 text-[14rem] font-black leading-none tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-amber-300 to-amber-500 drop-shadow-[0_0_50px_rgba(245,158,11,0.5)] font-heading"
+            className="mt-2 text-[14rem] font-black leading-none tabular-nums text-transparent bg-clip-text bg-gradient-to-b from-gold-yellow to-[#f59e0b] drop-shadow-[0_0_50px_rgba(255,210,63,0.5)] font-display"
           >
             {remaining}
           </motion.div>
-          <div className="mt-4 text-lg font-medium tracking-widest uppercase text-slate-400">The show starts in {remaining}…</div>
+          <div className="mt-4 text-sm font-mono tracking-widest uppercase text-text-dim">The show starts in {remaining}…</div>
         </>
       )}
 
@@ -533,17 +624,17 @@ function Countdown({ endsAt, ready, emcee, code }: { endsAt: number; ready: bool
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-8 mx-auto max-w-xl text-center bg-slate-900/60 border border-white/5 rounded-2xl p-5 backdrop-blur-md shadow-lg"
+          className="mt-8 mx-auto max-w-xl text-center bg-surface border border-line rounded-2xl p-5 backdrop-blur-md shadow-lg"
         >
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-amber-400">🎙 {emcee.hostName}</div>
-          <p className="mt-2 text-base font-medium italic text-slate-200 leading-relaxed">"{emcee.text}"</p>
+          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-accent-magenta">🎙 {emcee.hostName}</div>
+          <p className="mt-2 text-base font-semibold italic text-text-main leading-relaxed">"{emcee.text}"</p>
         </motion.div>
       )}
 
       {ready && (
         <button
           type="button"
-          className="pointer-events-auto mt-8 rounded-xl bg-slate-800/80 hover:bg-slate-700/90 border border-white/10 px-7 py-3 text-sm font-bold text-slate-300 hover:text-white transition active:scale-[0.98] cursor-pointer backdrop-blur-sm shadow-lg"
+          className="pointer-events-auto mt-8 rounded-xl bg-surface hover:bg-surface-2 border border-line px-7 py-3 text-xs font-mono font-bold uppercase tracking-wider text-text-dim hover:text-text-main transition active:scale-[0.98] cursor-pointer backdrop-blur-sm shadow-lg"
           onClick={() => socket.emit("room:skipIntro", { code })}
         >
           ⏩ Skip Intro

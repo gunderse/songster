@@ -127,6 +127,7 @@ interface ActiveTurn {
   eliminatedSlots?: number[];
   /** Distraction state details. */
   distraction?: { teamId: string; playerName: string } | null;
+  snippetRemainingMs?: number | null;
 }
 
 interface GameHistoryEntry {
@@ -762,6 +763,7 @@ export class RoomManager {
       hiddenSongIds: new Set(),
       pendingPlacement: null,
       pendingStealPlacement: null,
+      snippetRemainingMs: null,
     };
     game.lastResult = null;
     this.armPlaceTimer(room);
@@ -1541,6 +1543,7 @@ export class RoomManager {
       hiddenSongIds: new Set(),
       pendingPlacement: null,
       pendingStealPlacement: null,
+      snippetRemainingMs: null,
     };
     game.lastResult = null;
     this.armPlaceTimer(room);
@@ -1821,10 +1824,17 @@ export class RoomManager {
         game.active.placeDeadline = null;
       }
     }
- 
     if (game.active !== null && game.active.botTimer) {
       clearTimeout(game.active.botTimer);
       game.active.botTimer = null;
+    }
+    if (game.active !== null) {
+      if (game.active.snippetEndsAt !== null && Date.now() < game.active.snippetEndsAt - 1000) {
+        game.active.snippetRemainingMs = game.active.snippetEndsAt - 1000 - Date.now();
+      } else {
+        game.active.snippetRemainingMs = null;
+      }
+      game.active.snippetEndsAt = 0;
     }
 
     logger.info({ code: room.code, remainingMs: game.pauseRemainingMs }, "game paused");
@@ -1883,9 +1893,19 @@ export class RoomManager {
         game.active.botTimer = setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
       }
  
-      const lenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
-      game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
-      this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS: game.active.song.snippetStartS, lenS });
+      if (game.active.snippetRemainingMs && game.active.snippetRemainingMs > 0) {
+        const remainingLenS = game.active.snippetRemainingMs / 1000;
+        const totalLenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
+        const elapsedS = Math.max(0, totalLenS - remainingLenS);
+        const startS = game.active.song.snippetStartS + elapsedS;
+        
+        game.active.snippetEndsAt = Date.now() + game.active.snippetRemainingMs + 1000;
+        game.active.snippetRemainingMs = null;
+        
+        this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS, lenS: remainingLenS });
+      } else {
+        game.active.snippetEndsAt = 0;
+      }
     } else {
       // Fallback
       if (game.active === null) {
@@ -1899,9 +1919,19 @@ export class RoomManager {
           game.active.botTimer = setTimeout(() => this.botPlace(room, turnId), BOT_MIN_MS + Math.floor(Math.random() * BOT_JITTER_MS));
         }
  
-        const lenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
-        game.active.snippetEndsAt = Date.now() + lenS * 1000 + 1000;
-        this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS: game.active.song.snippetStartS, lenS });
+        if (game.active.snippetRemainingMs && game.active.snippetRemainingMs > 0) {
+          const remainingLenS = game.active.snippetRemainingMs / 1000;
+          const totalLenS = game.active.song.snippetLenS ?? room.config.snippetLenS;
+          const elapsedS = Math.max(0, totalLenS - remainingLenS);
+          const startS = game.active.song.snippetStartS + elapsedS;
+          
+          game.active.snippetEndsAt = Date.now() + game.active.snippetRemainingMs + 1000;
+          game.active.snippetRemainingMs = null;
+          
+          this.hooks.playAudioToHubs(room.code, { songId: game.active.song.songId, startS, lenS: remainingLenS });
+        } else {
+          game.active.snippetEndsAt = 0;
+        }
       }
     }
 

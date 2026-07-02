@@ -139,18 +139,19 @@ export function fadeOutSnippet(ms = 1600): void {
 }
 
 /** Keep playing or restart the recent guess snippet at a low background volume. */
-export function continueRecentSnippet(url: string, startS: number): void {
+export function continueRecentSnippet(url: string, startS: number, volume = 1.0): void {
   if (!unlocked) return;
   if (snippetStopTimer !== null) {
     clearTimeout(snippetStopTimer);
     snippetStopTimer = null;
   }
   const el = snippetEl;
-  if (el.src === url && !el.paused && el.currentTime > 0) {
-    fade(el, el.volume, 0.25, 400);
+  const absoluteUrl = new URL(url, window.location.origin).href;
+  if (el.src === absoluteUrl && !el.paused && el.currentTime > 0) {
+    fade(el, el.volume, volume, 400);
     return;
   }
-  playSnippet(url, startS, 9999, 0.25, false);
+  playSnippet(url, startS, 9999, volume, false);
 }
 
 /** Play a generated emcee voice clip (separate from the song snippet). `null` = caption-only. */

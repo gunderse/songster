@@ -1,1 +1,50 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Big Shoulders Display', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  --color-bg-base: #1a1110;
+  --color-bg-deep: #0a0605;
+  --color-surface: #241715;
+  --color-surface-2: #2e1c19;
+  --color-line: #3a2622;
+  --color-line-2: #4a342e;
+  --color-text-main: #fff6ef;
+  --color-text-dim: #c4a79c;
+  --color-text-faint: #7a635c;
+  --color-accent-magenta: #ff2d78;
+  --color-magenta-soft: #ff7aa6;
+  --color-magenta-deep: #7a0f38;
+  --color-gold-yellow: #ffd23f;
+  --color-kick-red: #ff5d8f;
+
+  --animate-sc-pulse: scPulse 1.1s ease-in-out infinite;
+  --animate-sc-caret: scCaret 1.1s steps(1) infinite;
+  --animate-sc-float: scFloat 3s ease-in-out infinite;
+  --animate-sc-wave: scWave 0.9s ease-in-out infinite;
+
+  @keyframes scPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  @keyframes scCaret {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+  @keyframes scFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+  @keyframes scWave {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+  }
+}
+
+body {
+  background-color: var(--color-bg-base);
+  color: var(--color-text-main);
+  font-family: var(--font-sans);
+}

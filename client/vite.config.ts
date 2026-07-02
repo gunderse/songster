@@ -17,6 +17,7 @@ const proxiedPaths = [
   "/showcase",
   "/sounds",
   "/effects",
+  "/bgmusic",
 ];
 
 export default defineConfig({

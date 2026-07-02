@@ -131,9 +131,9 @@ export function Admin() {
 
   if (code === null) {
     return (
-      <main className="mx-auto max-w-2xl p-6 text-slate-100">
-        <h1 className="text-2xl font-black">🎛️ Songster · Admin</h1>
-        <p className="mt-1 text-slate-400">Create a game room.</p>
+      <main className="mx-auto max-w-2xl p-6 text-text-main font-sans">
+        <h1 className="text-3xl font-display font-black uppercase tracking-wide">🎛️ Songster · Admin</h1>
+        <p className="mt-1 text-text-dim">Create a game room.</p>
 
         <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-5">
           <NumberField label="Teams" value={teamCount} min={2} max={4} onChange={setTeamCount} />
@@ -144,7 +144,7 @@ export function Admin() {
         </div>
 
         <div className="mt-6">
-          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Music Source</label>
+          <label className="text-xs uppercase tracking-wide text-text-faint font-bold font-mono">Music Source</label>
           <div className="mt-2 flex flex-wrap gap-2">
             {[
               ["all", "All Songs (Local + Plex)"],
@@ -158,8 +158,8 @@ export function Admin() {
                   type="button"
                   onClick={() => setMusicSource(value as any)}
                   className={`flex-1 min-w-[150px] rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${active
-                      ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20"
-                      : "bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200"
+                      ? "bg-accent-magenta border-accent-magenta text-[#1a1110] shadow-lg shadow-accent-magenta/20"
+                      : "bg-surface border-line text-text-dim hover:bg-surface-2 hover:text-text-main"
                     }`}
                 >
                   {label}
@@ -170,12 +170,12 @@ export function Admin() {
         </div>
 
         <div className="mt-6">
-          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Narrator Voice</label>
+          <label className="text-xs uppercase tracking-wide text-text-faint font-bold font-mono">Narrator Voice</label>
           <div className="mt-2">
             <select
               value={narratorVoice}
               onChange={(e) => setNarratorVoice(e.target.value)}
-              className="w-full rounded-xl bg-slate-900 border border-slate-800 text-slate-300 px-4 py-3 text-sm outline-none focus:border-indigo-500 transition font-semibold"
+              className="w-full rounded-xl bg-surface border border-line text-text-main px-4 py-3 text-sm outline-none focus:border-accent-magenta transition font-semibold"
             >
               <option value="random">🎲 Random (Biased to Fraiser/Host voices)</option>
               <option value="cycle">🔄 Cycle (new voice each turn)</option>
@@ -189,7 +189,7 @@ export function Admin() {
         </div>
 
         <div className="mt-6">
-          <label className="text-xs uppercase tracking-wide text-slate-500 font-bold">Multi-Character Showcase Highlights (Finale only by default)</label>
+          <label className="text-xs uppercase tracking-wide text-text-faint font-bold font-mono">Multi-Character Showcase Highlights (Finale only by default)</label>
           <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
               ["Steals", showcaseSteals, setShowcaseSteals],
@@ -204,8 +204,8 @@ export function Admin() {
                   type="button"
                   onClick={() => (onChange as any)(!value)}
                   className={`rounded-xl py-3 px-4 text-sm font-bold border transition duration-200 active:scale-[0.98] cursor-pointer ${active
-                      ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-600/20"
-                      : "bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-850 hover:text-slate-200"
+                      ? "bg-accent-magenta border-accent-magenta text-[#1a1110] shadow-lg shadow-accent-magenta/20"
+                      : "bg-surface border-line text-text-dim hover:bg-surface-2 hover:text-text-main"
                     }`}
                 >
                   {active ? "✓ " : "+ "} {label as string}
@@ -220,11 +220,11 @@ export function Admin() {
           <ChipRow label="Tags" options={facets?.tags ?? []} selected={tags} onToggle={(v) => toggle(tags, setTags, v)} />
         </Section>
 
-        {error !== null && <p className="mt-4 text-rose-400">{error}</p>}
+        {error !== null && <p className="mt-4 text-kick-red">{error}</p>}
         <button
           type="button"
           onClick={createRoom}
-          className="mt-6 rounded-lg bg-indigo-500 px-6 py-2.5 font-semibold text-white hover:bg-indigo-400"
+          className="mt-6 rounded-lg bg-accent-magenta hover:bg-magenta-soft text-[#1a1110] px-6 py-2.5 font-bold shadow-[0_4px_12px_rgba(255,45,120,0.2)] transition active:scale-95 cursor-pointer"
         >
           Create room
         </button>
@@ -234,17 +234,17 @@ export function Admin() {
         <HubAudioSmokeTestPanel />
 
         {/* Active Rooms Listing */}
-        <section className="mt-8 border-t border-slate-900 pt-6">
+        <section className="mt-8 border-t border-line pt-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-black text-slate-100">🎮 Active Game Rooms</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Currently active and running rooms in memory.</p>
+              <h2 className="text-xl font-display font-black uppercase text-text-main">🎮 Active Game Rooms</h2>
+              <p className="text-xs text-text-faint mt-0.5">Currently active and running rooms in memory.</p>
             </div>
             {activeRooms.length > 0 && (
               <button
                 type="button"
                 onClick={handleDestroyAllRooms}
-                className="rounded-xl bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-450 px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+                className="rounded-xl bg-kick-red/10 hover:bg-kick-red/20 border border-kick-red/20 text-kick-red px-4 py-2 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
               >
                 🔴 Destroy All Rooms
               </button>
@@ -253,19 +253,19 @@ export function Admin() {
 
           <div className="mt-4 space-y-3">
             {activeRooms.length === 0 ? (
-              <p className="text-sm text-slate-600 italic py-2">No active rooms found.</p>
+              <p className="text-sm text-text-faint italic py-2">No active rooms found.</p>
             ) : (
               activeRooms.map((r) => (
-                <div key={r.code} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-4 hover:border-slate-700 transition">
+                <div key={r.code} className="flex items-center justify-between rounded-xl border border-line bg-surface/60 p-4 hover:border-text-faint transition">
                   <div>
-                    <span className="text-lg font-black tracking-wider text-indigo-300 mr-3">{r.code}</span>
-                    <span className={`text-xs uppercase px-2 py-0.5 rounded-md font-bold ${r.status === "lobby" ? "bg-amber-950/40 text-amber-300 border border-amber-800/30" :
+                    <span className="text-lg font-display font-black tracking-wider text-accent-magenta mr-3">{r.code}</span>
+                    <span className={`text-xs uppercase px-2 py-0.5 rounded-md font-mono font-bold ${r.status === "lobby" ? "bg-amber-950/40 text-gold-yellow border border-amber-800/30" :
                         r.status === "playing" ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/30" :
-                          "bg-slate-900 text-slate-400 border border-slate-800"
+                        "bg-surface text-text-dim border border-line"
                       }`}>
                       {r.status}
                     </span>
-                    <div className="text-xs text-slate-500 mt-1">
+                    <div className="text-xs text-text-faint mt-1">
                       {r.playerCount} player{r.playerCount !== 1 ? "s" : ""} · {r.teamCount} teams · Created {new Date(r.createdAt).toLocaleTimeString()}
                     </div>
                   </div>
@@ -273,14 +273,14 @@ export function Admin() {
                     <button
                       type="button"
                       onClick={() => setCode(r.code)}
-                      className="rounded-lg bg-slate-900 hover:bg-slate-850 border border-slate-850 px-3 py-1.5 text-xs font-bold text-slate-300 cursor-pointer"
+                      className="rounded-lg bg-surface hover:bg-surface-2 border border-line px-3 py-1.5 text-xs font-bold text-text-dim cursor-pointer"
                     >
                       View
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDestroyRoom(r.code)}
-                      className="rounded-lg bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/30 px-3 py-1.5 text-xs font-bold text-rose-300 cursor-pointer"
+                      className="rounded-lg bg-rose-955/30 hover:bg-rose-900/40 border border-rose-800/30 px-3 py-1.5 text-xs font-bold text-rose-350 cursor-pointer"
                     >
                       Destroy
                     </button>
@@ -361,46 +361,46 @@ export function Admin() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-6 text-slate-100">
+    <main className="mx-auto max-w-3xl p-6 text-text-main font-sans">
       <div className="flex flex-wrap items-center gap-4">
         <div>
-          <div className="text-xs uppercase tracking-widest text-slate-500">Room code</div>
+          <div className="text-xs uppercase tracking-widest text-text-faint font-mono">Room code</div>
           <div className="flex items-center gap-3">
-            <div className="text-5xl font-black tracking-[0.3em] text-indigo-300">{code}</div>
+            <div className="text-5xl font-display font-black tracking-[0.3em] text-accent-magenta">{code}</div>
             <button
               type="button"
               onClick={() => handleDestroyRoom(code)}
-              className="rounded-xl bg-rose-600/10 hover:bg-rose-600/20 border border-rose-500/20 text-rose-450 px-3.5 py-1.5 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+              className="rounded-xl bg-kick-red/10 hover:bg-kick-red/20 border border-kick-red/20 text-kick-red px-3.5 py-1.5 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
             >
               🔴 Destroy Room
             </button>
             <button
               type="button"
               onClick={() => setCode(null)}
-              className="rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 px-3.5 py-1.5 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
+              className="rounded-xl bg-surface hover:bg-surface-2 border border-line text-text-dim px-3.5 py-1.5 text-xs font-bold transition active:scale-[0.98] cursor-pointer"
             >
               Back to List
             </button>
           </div>
         </div>
-        <div className="ml-auto text-right text-sm text-slate-400">
+        <div className="ml-auto text-right text-sm text-text-dim">
           <div>
-            Hub: <a className="text-indigo-300 hover:underline" href={hubUrl(code)} target="_blank" rel="noreferrer">{hubUrl(code)}</a>
+            Hub: <a className="text-accent-magenta hover:underline" href={hubUrl(code)} target="_blank" rel="noreferrer">{hubUrl(code)}</a>
           </div>
           <div>
-            Join: <a className="text-indigo-300 hover:underline" href={joinUrl(code)} target="_blank" rel="noreferrer">{joinUrl(code)}</a>
+            Join: <a className="text-accent-magenta hover:underline" href={joinUrl(code)} target="_blank" rel="noreferrer">{joinUrl(code)}</a>
           </div>
         </div>
       </div>
 
       {room !== null && (
         <>
-          <div className="mt-4 flex items-center gap-3 text-sm text-slate-400">
-            <span className="rounded bg-slate-800 px-2 py-1">{room.players.length} players</span>
-            <span className="rounded bg-slate-800 px-2 py-1">pool: {room.poolSize} songs</span>
-            <span className="rounded bg-slate-800 px-2 py-1">status: {room.status}</span>
+          <div className="mt-4 flex items-center gap-3 text-sm text-text-dim">
+            <span className="rounded bg-surface border border-line px-2 py-1">{room.players.length} players</span>
+            <span className="rounded bg-surface border border-line px-2 py-1">pool: {room.poolSize} songs</span>
+            <span className="rounded bg-surface border border-line px-2 py-1">status: {room.status}</span>
             {room.poolSize < room.config.targetLength && (
-              <span className="text-amber-400">⚠ pool smaller than the win target — approve/curate more songs</span>
+              <span className="text-gold-yellow">⚠ pool smaller than the win target — approve/curate more songs</span>
             )}
           </div>
 
@@ -413,7 +413,7 @@ export function Admin() {
               <button
                 type="button"
                 onClick={() => socket.emit("admin:addBot", { code })}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800"
+                className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-surface-2 bg-surface text-text-main"
               >
                 + Add bot 🤖
               </button>
@@ -424,7 +424,7 @@ export function Admin() {
                     key={bot.id}
                     type="button"
                     onClick={() => socket.emit("admin:removeBot", { code, playerId: bot.id })}
-                    className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-300 hover:bg-rose-900/40"
+                    className="rounded-full bg-surface border border-line px-2.5 py-1 text-xs text-text-dim hover:bg-kick-red/20 hover:text-kick-red hover:border-kick-red/35"
                     title="Remove bot"
                   >
                     {bot.name} ✕
@@ -434,13 +434,13 @@ export function Admin() {
           )}
 
           {room.status === "playing" && (
-            <div className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-              <h3 className="text-sm font-bold text-slate-350">🎮 Game Controls</h3>
+            <div className="mt-6 rounded-lg border border-line bg-surface/40 p-4">
+              <h3 className="text-sm font-bold text-text-dim">🎮 Game Controls</h3>
               <div className="flex gap-2 mt-2">
                 <button
                   type="button"
                   onClick={() => socket.emit(room.game?.paused ? "room:resume" : "room:pause", { code })}
-                  className="rounded-lg bg-slate-800 hover:bg-slate-750 border border-white/10 px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition active:scale-[0.98] cursor-pointer"
+                  className="rounded-lg bg-surface hover:bg-surface-2 border border-line px-4 py-2 text-xs font-bold text-text-dim hover:text-text-main transition active:scale-[0.98] cursor-pointer"
                 >
                   {room.game?.paused ? "▶ Resume Game" : "⏸ Pause Game"}
                 </button>
@@ -448,7 +448,7 @@ export function Admin() {
                   <button
                     type="button"
                     onClick={() => socket.emit("room:skipIntro", { code })}
-                    className="rounded-lg bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 px-4 py-2 text-xs font-bold text-white transition active:scale-[0.98] cursor-pointer"
+                    className="rounded-lg bg-accent-magenta hover:bg-magenta-soft border border-accent-magenta px-4 py-2 text-xs font-bold text-bg-deep transition active:scale-[0.98] cursor-pointer"
                   >
                     ⏩ Skip Intro
                   </button>
@@ -457,8 +457,8 @@ export function Admin() {
             </div>
           )}
 
-          <p className="mt-6 rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm text-slate-400">
-            🎬 Open the <a className="text-indigo-300 underline" href={hubUrl(code)} target="_blank" rel="noreferrer">Hub</a> on the big screen — start the game from there once players have joined.
+          <p className="mt-6 rounded-lg border border-line bg-surface/40 px-4 py-3 text-sm text-text-dim">
+            🎬 Open the <a className="text-accent-magenta underline" href={hubUrl(code)} target="_blank" rel="noreferrer">Hub</a> on the big screen — start the game from there once players have joined.
           </p>
         </>
       )}

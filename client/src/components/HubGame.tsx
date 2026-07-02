@@ -40,27 +40,27 @@ export function HubGame({
         <motion.div 
           animate={{ scale: [1, 1.15, 1], rotate: [0, 5, -5, 0] }}
           transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-          className="text-9xl drop-shadow-[0_0_50px_rgba(251,191,36,0.6)]"
+          className="text-9xl drop-shadow-[0_0_50px_rgba(255,210,63,0.6)]"
         >
           🏆
         </motion.div>
-        <div className="text-sm font-bold uppercase tracking-[0.4em] text-amber-400">Grand Champion</div>
-        <div className="text-7xl font-black font-heading tracking-tight" style={{ color: team?.color, textShadow: `0 0 40px ${team?.color}33` }}>
+        <div className="text-[11px] font-mono font-bold uppercase tracking-[0.4em] text-gold-yellow">Grand Champion</div>
+        <div className="text-7xl font-display font-black tracking-tight uppercase" style={{ color: team?.color, textShadow: `0 0 40px ${team?.color}33` }}>
           {team?.name}
         </div>
         <div className="mt-4 w-full max-w-xl">
           <Scoreboard room={room} />
         </div>
         {commentaryPending && (
-          <div className="mt-8 flex items-center gap-3 rounded-full border border-amber-400/30 bg-amber-500/10 px-6 py-2.5 text-sm font-semibold text-amber-200 backdrop-blur-md">
-            <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-amber-400" />
+          <div className="mt-8 flex items-center gap-3 rounded-full border border-accent-magenta/30 bg-accent-magenta/10 px-6 py-2.5 text-xs font-mono font-bold text-accent-magenta uppercase tracking-wider animate-pulse">
+            <span className="inline-block h-3 w-3 rounded-full bg-accent-magenta" />
             🎙 The host is writing the grand finale…
           </div>
         )}
         <button
           type="button"
           onClick={() => socket.emit("room:start", { code: room.code })}
-          className="mt-6 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-10 py-4.5 text-xl font-black text-white hover:scale-[1.03] active:scale-[0.98] transition shadow-lg shadow-emerald-950/20 animate-bounce"
+          className="mt-6 rounded-2xl bg-accent-magenta hover:bg-magenta-soft text-[#1a1110] px-10 py-4.5 text-xl font-display font-black uppercase tracking-wide hover:scale-[1.03] active:scale-[0.98] transition shadow-lg shadow-black/40 animate-bounce cursor-pointer"
         >
           🎮 Play another game
         </button>
@@ -75,11 +75,11 @@ export function HubGame({
         <motion.div 
           animate={{ y: [0, -8, 0] }}
           transition={{ duration: 2, repeat: Infinity }}
-          className="text-6xl"
+          className="text-6xl animate-sc-float"
         >
           ⏸️
         </motion.div>
-        <h2 className="text-2xl font-bold uppercase tracking-wider text-slate-400">Waiting for players…</h2>
+        <h2 className="text-sm font-mono font-bold uppercase tracking-wider text-text-dim">Waiting for players…</h2>
         <div className="w-full max-w-xl">
           <Scoreboard room={room} />
         </div>
@@ -95,20 +95,20 @@ export function HubGame({
   return (
     <div className="flex flex-col gap-10">
       <div className="text-center">
-        <div className="text-xs font-bold uppercase tracking-[0.3em] text-slate-500">Active Turn</div>
-        <h2 className="mt-1.5 text-4xl font-black font-heading tracking-tight">
+        <div className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-text-faint">Active Turn</div>
+        <h2 className="mt-1.5 text-4xl font-display font-black tracking-tight uppercase">
           <span style={{ color: activeTeam?.color, textShadow: `0 0 25px ${activeTeam?.color}22` }}>{activeTeam?.name}</span>
-          <span className="text-slate-400 font-medium">
-            {" · "}
+          <span className="text-text-dim font-medium lowercase font-sans text-2xl ml-2">
+            {"· "}
             {active.placerName}
-            {suspense ? " locked in a guess" : revealing ? (result.timeout ? "'s time ran out" : "'s result") : " is choosing"}
+            {suspense ? " locked in a guess" : revealing ? (result.timeout ? "'s time ran out" : "'s result") : " is placing"}
           </span>
         </h2>
         {active.steal !== null && !revealing && (
           <motion.p 
             animate={{ scale: [1, 1.03, 1] }}
             transition={{ duration: 1.5, repeat: Infinity }}
-            className="mt-3 text-xl font-extrabold text-amber-400 tracking-wide"
+            className="mt-3 text-lg font-display font-black text-gold-yellow uppercase tracking-widest"
           >
             🥷 {room.teams.find((t) => t.id === active.steal!.teamId)?.name} is challenging with a STEAL!
           </motion.p>
@@ -118,7 +118,7 @@ export function HubGame({
             <button
               type="button"
               onClick={() => socket.emit("hub:skipSong")}
-              className="rounded-xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-900/30 hover:text-rose-200 px-5 py-2 text-xs font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
+              className="rounded-xl border border-line bg-surface hover:bg-surface-2 text-text-dim hover:text-text-main px-5 py-2 text-xs font-mono font-bold uppercase tracking-wider transition duration-200 active:scale-95 cursor-pointer shadow-md"
               title="Skip song without deduction"
             >
               ⏭ Skip Song
@@ -137,45 +137,40 @@ export function HubGame({
               animate={{ rotateY: 0, scale: 1, opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ rotateY: { type: "spring", stiffness: 90, damping: 15 }, scale: { duration: 0.4 } }}
-              style={{ transformStyle: "preserve-3d" }}
-              className="relative flex w-80 flex-col items-center gap-3 rounded-3xl border-2 bg-gradient-to-b from-slate-900 to-slate-950 p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)]"
+              style={{ transformStyle: "preserve-3d", borderColor: result.correct ? "#10b981" : "#ff5d8f" }}
+              className="relative flex w-80 flex-col items-center gap-3 rounded-[18px] border-2 bg-gradient-to-b from-surface to-bg-deep p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)]"
             >
               {/* Outer Glow according to correctness */}
               <div
                 className="absolute -inset-1.5 rounded-3xl"
                 aria-hidden
                 style={{ 
-                  background: result.correct ? "radial-gradient(circle, rgba(52,211,153,0.15) 0%, transparent 70%)" : "radial-gradient(circle, rgba(251,113,133,0.15) 0%, transparent 70%)", 
+                  background: result.correct ? "radial-gradient(circle, rgba(16,185,129,0.15) 0%, transparent 70%)" : "radial-gradient(circle, rgba(255,93,143,0.15) 0%, transparent 70%)", 
                   filter: "blur(25px)", 
                   zIndex: -1 
                 }}
               />
-              <div 
-                className="absolute inset-0 rounded-3xl border-2" 
-                style={{ borderColor: result.correct ? "#10b981" : "#f43f5e", pointerEvents: "none", boxShadow: result.correct ? "0 0 25px rgba(16,185,129,0.2)" : "0 0 25px rgba(244,63,94,0.2)" }} 
-                aria-hidden 
-              />
               <div className="text-6xl">{result.correct ? "✅" : (result.timeout ? "⏰" : "❌")}</div>
               <div className="relative mt-2 h-32 w-32 group">
                 {result.song.hasArt ? (
-                  <img src={artUrl(result.song.songId)} alt="" className="h-full w-full rounded-2xl object-cover border border-white/10 shadow-lg transition-transform group-hover:scale-105" />
+                  <img src={artUrl(result.song.songId)} alt="" className="h-full w-full rounded-2xl object-cover border border-line shadow-lg transition-transform group-hover:scale-105" />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center rounded-2xl bg-slate-800 text-5xl text-slate-500 border border-white/10">♪</div>
+                  <div className="flex h-full w-full items-center justify-center rounded-2xl bg-surface-2 text-5xl text-text-faint border border-line">♪</div>
                 )}
                 {/* Vinyl record design peeking out */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 h-28 w-28 rounded-full bg-black border border-white/10 shadow-inner group-hover:translate-x-1 transition-transform" />
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 h-28 w-28 rounded-full bg-bg-deep border border-line shadow-inner group-hover:translate-x-1 transition-transform" />
               </div>
-              <div className="text-6xl font-black font-heading tabular-nums tracking-tight mt-3 text-slate-100">{result.song.year}</div>
-              <div className="text-center text-xl font-bold font-heading text-slate-100">{result.song.title ?? "Unknown"}</div>
-              <div className="text-center text-sm font-semibold text-slate-400">{result.song.artist ?? ""}</div>
+              <div className="text-5xl font-display font-black tabular-nums tracking-tight mt-3 text-gold-yellow">{result.song.year}</div>
+              <div className="text-center text-xl font-display font-black text-text-main">{result.song.title ?? "Unknown"}</div>
+              <div className="text-center text-sm font-semibold text-text-dim">{result.song.artist ?? ""}</div>
               {result.steal !== null && (
                 <div
-                  className="mt-3 rounded-xl px-4 py-1.5 text-center text-xs uppercase tracking-widest font-extrabold border"
+                  className="mt-3 rounded-xl px-4 py-1.5 text-center text-xs uppercase tracking-widest font-mono font-bold border"
                   style={{
-                    background: result.steal.correct ? "rgba(245,158,11,0.1)" : "rgba(30,41,59,0.4)",
-                    borderColor: result.steal.correct ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.05)",
-                    color: result.steal.correct ? "#fbbf24" : "#64748b",
-                    boxShadow: result.steal.correct ? "0 0 15px rgba(245,158,11,0.1)" : "none"
+                    background: result.steal.correct ? "rgba(255,210,63,0.1)" : "rgba(36,23,21,0.4)",
+                    borderColor: result.steal.correct ? "rgba(255,210,63,0.3)" : "var(--color-line)",
+                    color: result.steal.correct ? "var(--color-gold-yellow)" : "var(--color-text-faint)",
+                    boxShadow: result.steal.correct ? "0 0 15px rgba(255,210,63,0.1)" : "none"
                   }}
                 >
                   {result.steal.correct ? `🥷 STOLEN BY ${result.steal.playerName}!` : `${result.steal.playerName}'s steal missed`}
@@ -189,10 +184,10 @@ export function HubGame({
               animate={{ scale: [1, 1.08, 1], rotate: [-2, 2, -2] }}
               exit={{ rotateY: 90, opacity: 0 }}
               transition={{ scale: { duration: 0.6, repeat: Infinity, ease: "easeInOut" }, rotate: { duration: 0.15, repeat: Infinity } }}
-              className="relative flex h-48 w-48 items-center justify-center rounded-3xl border-4 border-amber-400 bg-slate-900 text-7xl shadow-[0_0_40px_rgba(245,158,11,0.4)]"
+              className="relative flex h-48 w-48 items-center justify-center rounded-3xl border-4 border-accent-magenta bg-surface text-7xl shadow-[0_0_40px_rgba(255,45,120,0.4)]"
             >
               {/* Pulsing spotlight behind the drums */}
-              <div className="absolute inset-[-20px] rounded-full bg-amber-500/10 blur-xl animate-pulse pointer-events-none" />
+              <div className="absolute inset-[-20px] rounded-full bg-accent-magenta/10 blur-xl animate-pulse pointer-events-none" />
               🥁
             </motion.div>
           ) : (
@@ -207,7 +202,7 @@ export function HubGame({
               <div 
                 className="absolute inset-2 rounded-full animate-pulse blur-xl"
                 style={{
-                  background: `radial-gradient(circle, ${activeTeam?.color ?? '#6366f1'}44 0%, transparent 70%)`
+                  background: `radial-gradient(circle, ${activeTeam?.color ?? '#ff2d78'}44 0%, transparent 70%)`
                 }}
               />
               
@@ -215,7 +210,7 @@ export function HubGame({
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-                className="relative w-56 h-56 rounded-full bg-black flex items-center justify-center shadow-[0_20px_50px_rgba(0,0,0,0.8)] border border-neutral-800"
+                className="relative w-56 h-56 rounded-full bg-black flex items-center justify-center shadow-[0_30px_80px_rgba(0,0,0,0.65)] border border-neutral-900"
                 style={{
                   backgroundImage: 'repeating-radial-gradient(circle, #0c0a09, #0c0a09 2px, #1c1917 3px, #0c0a09 4px)'
                 }}
@@ -224,7 +219,7 @@ export function HubGame({
                 <div 
                   className="w-20 h-20 rounded-full flex items-center justify-center shadow-inner relative"
                   style={{ 
-                    backgroundColor: activeTeam?.color ?? "#6366f1",
+                    backgroundColor: activeTeam?.color ?? "#ff2d78",
                     boxShadow: "inset 0 0 12px rgba(0,0,0,0.5)"
                   }}
                 >
@@ -249,7 +244,7 @@ export function HubGame({
                 animate={{ scale: [1, 1.05, 1], opacity: [0.3, 0.6, 0.3] }}
                 transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                 className="absolute w-60 h-60 rounded-full border-2 border-dashed pointer-events-none"
-                style={{ borderColor: activeTeam?.color ?? "#6366f1" }}
+                style={{ borderColor: activeTeam?.color ?? "#ff2d78" }}
               />
             </motion.div>
           )}
@@ -264,11 +259,11 @@ export function HubGame({
           animate={{ opacity: 1, y: 0 }}
           className="mx-auto text-center"
         >
-          <div className="text-xs font-bold uppercase tracking-[0.4em] text-amber-300">Drumroll please…</div>
-          <p className="mt-1.5 text-2xl font-bold text-slate-200">Did {active.placerName} place it correctly?</p>
+          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.4em] text-gold-yellow">Drumroll please…</div>
+          <p className="mt-1.5 text-2xl font-bold text-text-main">Did {active.placerName} place it correctly?</p>
           {commentaryPending && (
-            <div className="mt-4 inline-flex items-center gap-2.5 rounded-full border border-amber-400/20 bg-amber-500/5 px-5 py-2 text-xs font-semibold text-amber-300 backdrop-blur-md">
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+            <div className="mt-4 inline-flex items-center gap-2.5 rounded-full border border-accent-magenta/25 bg-accent-magenta/5 px-5 py-2 text-xs font-mono font-bold text-accent-magenta uppercase tracking-wider backdrop-blur-md animate-pulse">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-accent-magenta" />
               🎙 Writing commentary…
             </div>
           )}
@@ -280,16 +275,16 @@ export function HubGame({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="mx-auto max-w-2xl text-center bg-slate-900/40 border border-white/5 rounded-2xl p-5 backdrop-blur-md shadow-lg"
+          className="mx-auto max-w-2xl text-center bg-surface border border-line rounded-2xl p-5 shadow-lg"
         >
-          <div className="text-xs font-bold uppercase tracking-[0.3em] text-amber-400">🎙 {emcee.hostName}</div>
-          <p className="mt-2 text-xl font-medium italic text-slate-200 leading-relaxed">“{emcee.text}”</p>
+          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-accent-magenta">🎙 {emcee.hostName}</div>
+          <p className="mt-2 text-xl font-medium italic text-text-main leading-relaxed">“{emcee.text}”</p>
         </motion.div>
       ) : null}
 
       {/* Active team's timeline (with a "?" placeholder at the guessed slot during suspense). */}
-      <div className="bg-slate-900/20 border border-white/5 rounded-3xl p-6 backdrop-blur-sm">
-        <div className="mb-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400" style={{ color: activeTeam?.color }}>
+      <div className="bg-surface/40 border border-line rounded-[18px] p-6 backdrop-blur-sm shadow-md">
+        <div className="mb-4 text-center text-xs font-mono font-bold uppercase tracking-[0.15em]" style={{ color: activeTeam?.color }}>
           {activeTeam?.name}'s timeline
         </div>
         <div className="flex flex-wrap justify-center gap-3">
@@ -297,22 +292,22 @@ export function HubGame({
             entry === "placeholder" ? (
               <motion.div
                 key={`ph-${i}`}
-                animate={{ scale: [1, 1.05, 1], boxShadow: ["0 0 10px rgba(245,158,11,0.2)", "0 0 20px rgba(245,158,11,0.4)", "0 0 10px rgba(245,158,11,0.2)"] }}
+                animate={{ scale: [1, 1.05, 1], boxShadow: ["0 0 10px rgba(255,45,120,0.2)", "0 0 20px rgba(255,45,120,0.4)", "0 0 10px rgba(255,45,120,0.2)"] }}
                 transition={{ duration: 1, repeat: Infinity }}
-                className="flex w-28 flex-col items-center rounded-xl border-2 border-dashed border-amber-400 bg-slate-950/80 p-3 text-center"
+                className="flex w-28 flex-col items-center rounded-xl border-2 border-dashed border-accent-magenta bg-bg-deep p-3 text-center"
                 style={{ borderTopColor: activeTeam?.color, borderTopWidth: 4 }}
               >
-                <div className="text-3xl font-black text-amber-300 font-heading">?</div>
-                <div className="line-clamp-2 text-[10px] leading-tight text-amber-300/80 font-semibold mt-1">{active.placerName}'s guess</div>
+                <div className="text-3xl font-display font-black text-accent-magenta">?</div>
+                <div className="line-clamp-2 text-[10px] leading-tight text-accent-magenta/80 font-bold mt-1 uppercase tracking-wide font-mono">{active.placerName}'s guess</div>
               </motion.div>
             ) : (
               <div
                 key={entry.songId}
-                className="flex w-28 flex-col items-center rounded-xl border border-slate-800 bg-slate-900/80 p-3 text-center shadow-md hover:border-slate-700 transition"
+                className="flex w-28 flex-col items-center rounded-xl border border-line bg-surface p-3 text-center shadow-md hover:border-text-faint transition"
                 style={{ borderTopColor: activeTeam?.color, borderTopWidth: 4 }}
               >
-                <div className="text-2xl font-black font-heading tabular-nums text-slate-100">{entry.year}</div>
-                <div className="line-clamp-2 text-[10px] leading-snug text-slate-400 mt-1 font-medium">{entry.isSeed ? "Initial Milestone" : (entry.title ?? "")}</div>
+                <div className="text-2xl font-display font-black tabular-nums text-text-main">{entry.year}</div>
+                <div className="line-clamp-2 text-[10px] leading-snug text-text-dim mt-1 font-medium">{entry.isSeed ? "Initial Milestone" : (entry.title ?? "")}</div>
               </div>
             ),
           )}
@@ -328,21 +323,21 @@ function Scoreboard({ room }: { room: RoomState }) {
   const game = room.game;
   if (game === null) return null;
   return (
-    <div className="mx-auto w-full max-w-2xl space-y-3 bg-slate-900/30 border border-white/5 rounded-2xl p-5 backdrop-blur-sm">
+    <div className="mx-auto w-full max-w-2xl space-y-3 bg-surface/40 border border-line rounded-2xl p-5 backdrop-blur-sm shadow-md">
       {room.teams.map((team) => {
         const len = game.timelines.find((t) => t.teamId === team.id)?.cards.filter((c) => !c.isSeed).length ?? 0;
         const playersForTeam = room.players.filter((p) => p.teamId === team.id).map((p) => p.name);
         return (
           <div key={team.id} className="flex items-center gap-4">
             <div className="w-36 flex flex-col items-end select-none min-w-0">
-              <span className="font-black font-heading text-sm uppercase tracking-wider leading-none text-right" style={{ color: team.color }}>
+              <span className="font-display font-black text-lg uppercase tracking-wider leading-none text-right" style={{ color: team.color }}>
                 {team.name}
               </span>
-              <span className="text-[10px] text-slate-500 font-semibold text-right mt-1" title={playersForTeam.join(", ")}>
+              <span className="text-[10px] text-text-faint font-mono font-bold uppercase tracking-wider text-right mt-1" title={playersForTeam.join(", ")}>
                 {playersForTeam.length > 0 ? playersForTeam.join(", ") : "no players"}
               </span>
             </div>
-            <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-slate-950 border border-white/5 p-[2px]">
+            <div className="h-3.5 flex-1 overflow-hidden rounded-full bg-bg-deep border border-line p-[2px]">
               <div 
                 className="h-full rounded-full transition-all duration-500 relative overflow-hidden" 
                 style={{ 
@@ -354,7 +349,7 @@ function Scoreboard({ room }: { room: RoomState }) {
                 <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.1),rgba(255,255,255,0.3)_50%,rgba(255,255,255,0.1))] w-[200%] -translate-x-[50%] animate-[shimmer_3s_infinite]" style={{ transform: "skewX(-20deg)" }} />
               </div>
             </div>
-            <span className="w-12 tabular-nums text-right text-xs font-bold text-slate-400">
+            <span className="w-12 tabular-nums text-right text-xs font-mono font-bold text-text-dim">
               {len}/{game.target}
             </span>
           </div>
